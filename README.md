@@ -1,6 +1,6 @@
 # ClickSiLogApp
 
-A React Native (Expo) restaurant app with Customer, Kitchen, Cashier, and Admin modules.
+A comprehensive React Native (Expo) restaurant management system with Customer, Kitchen, Cashier, and Admin modules.
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ A React Native (Expo) restaurant app with Customer, Kitchen, Cashier, and Admin 
 npm install
 ```
 
-### Run in Expo Go (Fastest - Mock Mode)
+### Run in Expo Go (Development - Mock Mode)
 ```bash
 npm start
 # Scan QR code with Expo Go app
@@ -26,22 +26,16 @@ npm run android
 npm run build:android:apk
 ```
 
-## Testing Firebase Real-Time Sync
-
-1. **Connect device via wireless debugging** (see `WIRELESS_DEBUGGING.md`)
-2. **Build and install:**
-   ```bash
-   npm run android
-   ```
-3. **Install on second device** (wireless or USB)
-4. **Test sync** - changes appear instantly on both devices
-
 ## Documentation
 
-- `WIRELESS_DEBUGGING.md` - Setup wireless debugging
-- `FIREBASE_PAYMONGO_SETUP.md` - Firebase and PayMongo configuration
-- `ENV_SETUP.md` - Environment variables setup
-- `docs/INTEGRATION.md` - Integration guide
+- **[PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md)** - Complete project documentation including:
+  - Project overview and architecture
+  - Module breakdown (Customer, Kitchen, Cashier, Admin)
+  - **PayMongo Payment Integration** - Detailed setup and implementation guide
+  - Setup & configuration instructions
+  - Build & deployment guide
+- **[ENV_SETUP.md](./ENV_SETUP.md)** - Environment variables setup
+- **[docs/INTEGRATION.md](./docs/INTEGRATION.md)** - Integration guide
 
 ## Scripts
 
@@ -52,10 +46,33 @@ npm run build:android:apk
 
 ## Project Structure
 
-- `src/config/` - Configuration (Firebase, app settings)
-- `src/services/` - Service layer (Firestore, Auth, etc.)
-- `src/screens/` - Screen components
-- `src/components/` - Reusable components
-- `src/contexts/` - React contexts (Auth, Cart, Theme)
-- `src/navigation/` - Navigation setup
+```
+src/
+├── components/     # Reusable UI components
+├── contexts/       # React Context providers (Auth, Cart, Theme)
+├── screens/        # Screen components organized by module
+├── services/       # Business logic and API services
+├── navigation/    # Navigation configuration
+├── config/         # App configuration (Firebase, theme)
+├── hooks/          # Custom React hooks
+└── utils/          # Utility functions
+```
+
+## Key Features
+
+- ✅ Real-time order synchronization via Firestore
+- ✅ Secure payment processing with PayMongo (GCash, PayMaya, Card)
+- ✅ Role-based access control (Customer, Kitchen, Cashier, Admin)
+- ✅ Dark/Light theme support
+- ✅ Offline support with local caching
+- ✅ Comprehensive error handling
+- ✅ Production-ready APK builds
+
+## Payment Integration
+
+The app uses **PayMongo** for secure payment processing. See [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md#paymongo-payment-integration) for detailed documentation on:
+- How PayMongo works
+- Implementation details
+- Setup instructions
+- Security best practices
 
