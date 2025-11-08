@@ -2,12 +2,15 @@
   "expo": {
     "name": "ClickSiLogApp",
     "slug": "clicksilogapp",
+    "scheme": "clicksilogapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.svg",
     "splash": {
+      "image": "./assets/icon.svg",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FFD54F"
     },
     "updates": {
       "fallbackToCacheTimeout": 0
@@ -17,17 +20,37 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.clicksilog.app"
+      "bundleIdentifier": "com.clicksilog.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos for menu items.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload menu item images."
+      }
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.svg",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.clicksilog.app",
       "versionCode": 1,
-      "permissions": []
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {},
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to upload menu item images.",
+          "cameraPermission": "The app accesses your camera to take photos for menu items."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "41aed3f3-1651-46af-adcb-0745defd4fda"

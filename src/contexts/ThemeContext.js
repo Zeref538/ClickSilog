@@ -2,8 +2,19 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { lightTheme, darkTheme } from '../config/theme';
+import { createSafeTheme } from '../theme/utils';
 
-const ThemeContext = createContext();
+// Default context value to prevent undefined access
+const defaultContextValue = {
+  theme: lightTheme,
+  toggleTheme: () => {},
+  themeMode: 'light',
+  spacing: lightTheme.spacing,
+  borderRadius: lightTheme.borderRadius,
+  typography: lightTheme.typography,
+};
+
+const ThemeContext = createContext(defaultContextValue);
 
 export const ThemeProvider = ({ children }) => {
   const systemColorScheme = useColorScheme();
@@ -41,14 +52,19 @@ export const ThemeProvider = ({ children }) => {
     return (themeMode === 'dark' ? darkTheme : lightTheme) || lightTheme;
   }, [themeMode]);
 
-  const contextValue = useMemo(() => ({
-    theme,
-    toggleTheme,
-    themeMode,
-    spacing: theme.spacing || lightTheme.spacing,
-    borderRadius: theme.borderRadius || lightTheme.borderRadius,
-    typography: theme.typography || lightTheme.typography,
-  }), [theme, themeMode, toggleTheme]);
+  const contextValue = useMemo(() => {
+    // Ensure theme is always defined with safe fallbacks
+    const currentTheme = createSafeTheme(theme || lightTheme);
+    
+    return {
+      theme: currentTheme,
+      toggleTheme,
+      themeMode,
+      spacing: currentTheme.spacing,
+      borderRadius: currentTheme.borderRadius,
+      typography: currentTheme.typography,
+    };
+  }, [theme, themeMode, toggleTheme]);
 
   // Always provide context value, even while loading theme preference
   // This prevents "useTheme must be used within ThemeProvider" errors
@@ -61,9 +77,25 @@ export const ThemeProvider = ({ children }) => {
 
 export const useTheme = () => {
   const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
+  
+  // Ensure context exists and has required properties
+  if (!context || typeof context !== 'object') {
+    console.warn('Theme context is invalid, using fallback');
+    return defaultContextValue;
   }
+  
+  // Ensure spacing is always available, even if context is malformed
+  if (!context.spacing || typeof context.spacing !== 'object') {
+    console.warn('Theme context missing spacing, using fallback');
+    return {
+      ...context,
+      theme: context.theme || lightTheme,
+      spacing: lightTheme.spacing,
+      borderRadius: context.borderRadius || lightTheme.borderRadius,
+      typography: context.typography || lightTheme.typography,
+    };
+  }
+  
   return context;
 };
 

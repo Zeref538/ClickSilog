@@ -10,7 +10,7 @@ export const useRealTimeCollection = (collectionName, conditions = [], order = [
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (appConfig.USE_MOCKS) {
+    if (appConfig.USE_MOCKS || !db) {
       const unsub = firestoreService.subscribeCollection(collectionName, {
         conditions,
         order,
@@ -23,27 +23,44 @@ export const useRealTimeCollection = (collectionName, conditions = [], order = [
           setLoading(false);
         }
       });
-      return () => unsub();
+      return () => unsub && unsub();
     }
 
-    let q = collection(db, collectionName);
-    conditions.forEach((c) => {
-      q = query(q, where(...c));
-    });
-    if (order.length > 0) {
-      q = query(q, orderBy(...order));
-    }
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newData = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setData(newData);
-      setLoading(false);
-    }, (err) => {
-      setError(err);
-      setLoading(false);
-    });
+    try {
+      let q = collection(db, collectionName);
+      conditions.forEach((c) => {
+        q = query(q, where(...c));
+      });
+      if (order.length > 0) {
+        q = query(q, orderBy(...order));
+      }
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const newData = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setData(newData);
+        setLoading(false);
+      }, (err) => {
+        setError(err);
+        setLoading(false);
+      });
 
-    return () => unsubscribe();
-  }, [collectionName, JSON.stringify(conditions), JSON.stringify(order)]);
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('useRealTime: Firestore error, falling back to firestoreService:', err);
+      const unsub = firestoreService.subscribeCollection(collectionName, {
+        conditions,
+        order,
+        next: (list) => {
+          setData(list);
+          setLoading(false);
+        },
+        error: (error) => {
+          setError(error);
+          setLoading(false);
+        }
+      });
+      return () => unsub && unsub();
+    }
+  }, [collectionName, JSON.stringify(conditions), JSON.stringify(order)]); // Note: JSON.stringify in deps can cause re-renders, but needed for deep comparison
 
   return { data, loading, error };
 };

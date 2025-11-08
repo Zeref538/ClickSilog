@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, ScrollView, Modal } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { firestoreService } from '../../services/firestoreService';
+import { alertService } from '../../services/alertService';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import ThemeToggle from '../../components/ui/ThemeToggle';
 
 const categories = ['rice', 'drink', 'extra'];
 
-const AddOnsManager = () => {
+const AddOnsManager = ({ navigation }) => {
   const { theme, spacing, borderRadius, typography } = useTheme();
   const [addOns, setAddOns] = useState([]);
   const [filter, setFilter] = useState('rice');
@@ -17,11 +18,25 @@ const AddOnsManager = () => {
   const [editingItem, setEditingItem] = useState(null);
 
   useEffect(() => {
-    const unsub = firestoreService.subscribeCollection('add_ons', { conditions: [], order: ['createdAt', 'asc'], next: setAddOns });
+    const unsub = firestoreService.subscribeCollection('addons', { conditions: [], order: ['createdAt', 'asc'], next: setAddOns });
     return () => unsub && unsub();
   }, []);
 
-  const filtered = useMemo(() => addOns.filter((a) => a.category === filter), [addOns, filter]);
+  // Infer category from add-on name or use existing category field
+  const getAddOnCategory = (addon) => {
+    if (addon.category) return addon.category;
+    const name = (addon.name || '').toLowerCase();
+    if (name.includes('rice')) return 'rice';
+    if (name.includes('drink') || name.includes('lemonade') || name.includes('tea') || name.includes('water')) return 'drink';
+    return 'extra'; // Default to extra for items like egg, hotdog, spam
+  };
+
+  const filtered = useMemo(() => {
+    return addOns.filter((a) => {
+      const category = getAddOnCategory(a);
+      return category === filter;
+    });
+  }, [addOns, filter]);
 
   const openAdd = () => {
     setEditingItem(null);
@@ -31,21 +46,56 @@ const AddOnsManager = () => {
 
   const openEdit = (item) => {
     setEditingItem(item);
-    setForm({ name: item.name || '', price: String(item.price || 0), category: item.category || filter });
+    const category = getAddOnCategory(item);
+    setForm({ name: item.name || '', price: String(item.price || 0), category: category || filter });
     setShowModal(true);
   };
 
   const save = async () => {
-    if (!form.name || !form.price) {
-      Alert.alert('Name and price are required');
+    // Validation
+    if (!form.name || !form.name.trim()) {
+      alertService.error('Error', 'Add-on name is required');
       return;
     }
+    
+    if (!form.price || form.price.trim() === '') {
+      alertService.error('Error', 'Price is required');
+      return;
+    }
+    
+    const price = Number(form.price);
+    if (isNaN(price) || price < 0) {
+      alertService.error('Error', 'Price must be a valid positive number');
+      return;
+    }
+    
+    if (price > 9999) {
+      alertService.error('Error', 'Price is too large (maximum: ₱9,999)');
+      return;
+    }
+    
+    if (form.name.trim().length < 2) {
+      alertService.error('Error', 'Add-on name must be at least 2 characters');
+      return;
+    }
+    
+    if (form.name.trim().length > 50) {
+      alertService.error('Error', 'Add-on name must be 50 characters or less');
+      return;
+    }
+    
+    if (!form.category || !categories.includes(form.category)) {
+      alertService.error('Error', 'Valid category is required');
+      return;
+    }
+    
     const id = editingItem?.id || `${form.category}_${Date.now()}`;
-    await firestoreService.upsertDocument('add_ons', id, {
+    await firestoreService.upsertDocument('addons', id, {
       name: form.name,
       price: Number(form.price || 0),
       category: form.category,
       available: editingItem?.available !== false ? (editingItem?.available ?? true) : true,
+      linkedTo: ['silog_meals'], // Keep linkedTo for backward compatibility
       updatedAt: new Date().toISOString(),
       createdAt: editingItem?.createdAt || new Date().toISOString()
     });
@@ -55,13 +105,13 @@ const AddOnsManager = () => {
   };
 
   const toggle = async (a) => {
-    await firestoreService.updateDocument('add_ons', a.id, { available: !a.available });
+    await firestoreService.updateDocument('addons', a.id, { available: !a.available });
   };
 
   const remove = async (a) => {
-    Alert.alert('Delete Add-on', `Delete ${a.name}?`, [
+    alertService.alert('Delete Add-on', `Delete ${a.name}?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => await firestoreService.deleteDocument('add_ons', a.id) }
+      { text: 'Delete', style: 'destructive', onPress: async () => await firestoreService.deleteDocument('addons', a.id) }
     ]);
   };
 
@@ -85,6 +135,29 @@ const AddOnsManager = () => {
       ]}>
         <View style={styles.headerContent}>
           <View style={styles.titleRow}>
+            <AnimatedButton
+              onPress={() => navigation.goBack()}
+              style={[
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.border,
+                  borderRadius: borderRadius.round,
+                  width: 44,
+                  height: 44,
+                  borderWidth: 1.5,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginRight: spacing.sm,
+                }
+              ]}
+            >
+              <Icon
+                name="arrow-back"
+                library="ionicons"
+                size={22}
+                color={theme.colors.text}
+              />
+            </AnimatedButton>
             <Icon
               name="add-circle"
               library="ionicons"
@@ -99,68 +172,76 @@ const AddOnsManager = () => {
                 ...typography.h2,
               }
             ]}>
-              Add-ons Manager
+              Add Ons Management
             </Text>
           </View>
           <ThemeToggle />
         </View>
       </View>
 
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        contentContainerStyle={[
-          styles.tabs,
-          {
-            paddingHorizontal: spacing.md,
-            paddingVertical: spacing.md,
-            gap: spacing.md,
-          }
-        ]}
-      >
-        {categories.map((c) => {
-          const categoryIcon = getCategoryIcon(c);
-          return (
-            <AnimatedButton
-            key={c}
-              style={[
-                styles.tab,
-                {
-                  backgroundColor: filter === c ? theme.colors.primary : theme.colors.surfaceVariant,
-                  borderColor: filter === c ? theme.colors.primary : theme.colors.border,
-                  borderRadius: borderRadius.lg,
-                  paddingVertical: spacing.md,
-                  paddingHorizontal: spacing.lg,
-                  minHeight: 50, // Increased minHeight to ensure icon + text visibility
-                  borderWidth: 1.5,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: spacing.sm,
-                  shadowColor: filter === c ? theme.colors.primary : undefined,
-                }
-              ]}
-            onPress={() => { setFilter(c); setForm((f) => ({ ...f, category: c })); }}
-            >
-              <Icon
-                name={categoryIcon.name}
-                library={categoryIcon.library}
-                size={20}
-                color={filter === c ? theme.colors.onPrimary : theme.colors.textSecondary}
-              />
-              <Text style={[
-                styles.tabText,
-                {
-                  color: filter === c ? theme.colors.onPrimary : theme.colors.textSecondary,
-                  ...typography.captionBold,
-                }
-              ]}>
-                {c.charAt(0).toUpperCase() + c.slice(1)}
-              </Text>
-            </AnimatedButton>
-          );
-        })}
-      </ScrollView>
+      <View style={[
+        styles.tabsContainer,
+        {
+          backgroundColor: theme.colors.surface,
+          borderBottomColor: theme.colors.border,
+          borderBottomWidth: 1,
+          paddingVertical: spacing.sm,
+        }
+      ]}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          contentContainerStyle={[
+            styles.tabs,
+            {
+              paddingHorizontal: spacing.md,
+              gap: spacing.sm,
+            }
+          ]}
+        >
+          {categories.map((c) => {
+            const categoryIcon = getCategoryIcon(c);
+            return (
+              <AnimatedButton
+                key={c}
+                style={[
+                  styles.tab,
+                  {
+                    backgroundColor: filter === c ? theme.colors.primary : theme.colors.surfaceVariant,
+                    borderColor: filter === c ? theme.colors.primary : theme.colors.border,
+                    borderRadius: borderRadius.md,
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
+                    borderWidth: 1.5,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: spacing.xs,
+                    shadowColor: filter === c ? theme.colors.primary : undefined,
+                  }
+                ]}
+                onPress={() => { setFilter(c); setForm((f) => ({ ...f, category: c })); }}
+              >
+                <Icon
+                  name={categoryIcon.name}
+                  library={categoryIcon.library}
+                  size={18}
+                  color={filter === c ? theme.colors.onPrimary : theme.colors.textSecondary}
+                />
+                <Text style={[
+                  styles.tabText,
+                  {
+                    color: filter === c ? theme.colors.onPrimary : theme.colors.textSecondary,
+                    ...typography.captionBold,
+                  }
+                ]}>
+                  {c.charAt(0).toUpperCase() + c.slice(1)}
+                </Text>
+              </AnimatedButton>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       <AnimatedButton
         style={[
@@ -203,7 +284,8 @@ const AddOnsManager = () => {
         scrollEnabled={true}
         nestedScrollEnabled={true}
         renderItem={({ item }) => {
-          const categoryIcon = getCategoryIcon(item.category);
+          const category = getAddOnCategory(item);
+          const categoryIcon = getCategoryIcon(category);
           return (
             <View style={[
               styles.card,
@@ -304,7 +386,7 @@ const AddOnsManager = () => {
                     textTransform: 'capitalize',
                   }
                 ]}>
-                  {item.category}
+                  {category}
                 </Text>
               </View>
               <View style={[
@@ -401,15 +483,21 @@ const AddOnsManager = () => {
                     color="#FFFFFF"
                     style={{ marginRight: spacing.xs }}
                   />
-                  <Text style={[
-                    styles.btnText,
-                    {
-                      color: '#FFFFFF',
-                      ...typography.captionBold,
-                    }
-                  ]}>
-                    Delete
-                  </Text>
+                    <Text 
+                      style={[
+                        styles.btnText,
+                        {
+                          color: '#FFFFFF',
+                          ...typography.captionBold,
+                        }
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit={true}
+                      minimumFontScale={0.7}
+                      allowFontScaling={true}
+                    >
+                      Delete
+                    </Text>
                 </AnimatedButton>
             </View>
           </View>
@@ -695,6 +783,9 @@ const styles = StyleSheet.create({
   headerTitle: {
     // Typography handled via theme
   },
+  tabsContainer: {
+    // Styled inline
+  },
   tabs: {
     // Padding handled inline
   },
@@ -807,7 +898,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   modalContent: {
-    padding: 24
+    // padding handled inline with theme spacing
   },
   label: {
     marginBottom: 8,

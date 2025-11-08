@@ -5,6 +5,9 @@ import MenuManager from '../screens/admin/MenuManager';
 import AddOnsManager from '../screens/admin/AddOnsManager';
 import DiscountManager from '../screens/admin/DiscountManager';
 import SalesReportScreen from '../screens/admin/SalesReportScreen';
+import UserManager from '../screens/admin/UserManager';
+import SeedDatabaseScreen from '../screens/admin/SeedDatabaseScreen';
+import PaymentSettingsScreen from '../screens/admin/PaymentSettingsScreen';
 
 const Stack = createStackNavigator();
 
@@ -29,10 +32,13 @@ const AdminStack = () => (
         headerShown: false
       }}
     />
-    <Stack.Screen name="MenuManager" component={MenuManager} options={{ headerShown: false }} />
-    <Stack.Screen name="AddOnsManager" component={AddOnsManager} options={{ headerShown: false }} />
-    <Stack.Screen name="DiscountManager" component={DiscountManager} options={{ headerShown: false }} />
-    <Stack.Screen name="SalesReport" component={SalesReportScreen} options={{ headerShown: false }} />
+           <Stack.Screen name="MenuManager" component={MenuManager} options={{ headerShown: false }} />
+           <Stack.Screen name="AddOnsManager" component={AddOnsManager} options={{ headerShown: false }} />
+           <Stack.Screen name="DiscountManager" component={DiscountManager} options={{ headerShown: false }} />
+           <Stack.Screen name="UserManager" component={UserManager} options={{ headerShown: false }} />
+           <Stack.Screen name="SalesReport" component={SalesReportScreen} options={{ headerShown: false }} />
+           <Stack.Screen name="SeedDatabase" component={SeedDatabaseScreen} options={{ headerShown: false }} />
+           <Stack.Screen name="PaymentSettings" component={PaymentSettingsScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

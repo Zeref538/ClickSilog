@@ -8,7 +8,10 @@ import AnimatedButton from '../ui/AnimatedButton';
 const OrderSummary = () => {
   const { theme, spacing, borderRadius, typography } = useTheme();
   const { items, total, updateQty, removeFromCart } = useCart();
-  const cartCount = items.reduce((n, i) => n + (i.qty || 0), 0);
+  
+  // Safety check - ensure items is always an array
+  const safeItems = Array.isArray(items) ? items : [];
+  const cartCount = safeItems.reduce((n, i) => n + (i.qty || 0), 0);
 
   return (
     <View style={[
@@ -83,9 +86,9 @@ const OrderSummary = () => {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
       >
-        {items.map((item) => (
+        {safeItems.map((item, index) => (
           <View
-            key={item.id}
+            key={item?.id || `item-${index}`}
             style={[
               styles.itemRow,
               {
@@ -112,10 +115,10 @@ const OrderSummary = () => {
                     flex: 1,
                   }
                 ]} numberOfLines={2}>
-                  {item.name}
+                  {item?.name || 'Unknown Item'}
                 </Text>
                 <AnimatedButton
-                  onPress={() => removeFromCart(item.id)}
+                  onPress={() => item?.id && removeFromCart(item.id)}
                   style={[
                     styles.removeBtn,
                     {
@@ -137,8 +140,8 @@ const OrderSummary = () => {
               </View>
               {!!item.addOns?.length && (
                 <View style={[styles.addOnsContainer, { marginBottom: spacing.sm, gap: spacing.xs / 2 }]}>
-                  {item.addOns.map((a) => (
-                    <View key={a.id} style={[styles.addOnRow, { gap: spacing.xs / 2 }]}>
+                  {item.addOns.map((a, aIndex) => (
+                    <View key={a?.id || `addon-${index}-${aIndex}`} style={[styles.addOnRow, { gap: spacing.xs / 2 }]}>
                       <Icon
                         name="add-circle"
                         library="ionicons"
@@ -152,7 +155,7 @@ const OrderSummary = () => {
                           ...typography.caption,
                         }
                       ]}>
-                        {a.name}
+                        {a?.name || 'Add-on'}
                       </Text>
                       <Text style={[
                         styles.addOnPrice,
@@ -162,13 +165,13 @@ const OrderSummary = () => {
                           marginLeft: spacing.xs,
                         }
                       ]}>
-                        +₱{Number(a.price || 0).toFixed(2)}
+                        +₱{Number(a?.price || 0).toFixed(2)}
                       </Text>
                     </View>
                   ))}
                 </View>
               )}
-              {item.specialInstructions && (
+              {item?.specialInstructions && (
                 <View style={[
                   styles.notesContainer,
                   {
@@ -212,7 +215,7 @@ const OrderSummary = () => {
               ]}>
                 <View style={[styles.qtyControls, { gap: spacing.sm }]}>
                   <AnimatedButton
-                    onPress={() => updateQty(item.id, Math.max(1, (item.qty || 1) - 1))}
+                    onPress={() => item?.id && updateQty(item.id, Math.max(1, (item.qty || 1) - 1))}
                     style={[
                       styles.qtyBtn,
                       {
@@ -241,10 +244,10 @@ const OrderSummary = () => {
                       textAlign: 'center',
                     }
                   ]}>
-                    {item.qty || 1}
+                    {item?.qty || 1}
                   </Text>
                   <AnimatedButton
-                    onPress={() => updateQty(item.id, (item.qty || 1) + 1)}
+                    onPress={() => item?.id && updateQty(item.id, (item.qty || 1) + 1)}
                     style={[
                       styles.qtyBtn,
                       {
@@ -272,7 +275,7 @@ const OrderSummary = () => {
                     ...typography.h3,
                   }
                 ]}>
-                  ₱{Number((item.totalItemPrice || item.price || 0) * (item.qty || 1)).toFixed(2)}
+                  ₱{Number((item?.totalItemPrice || item?.price || 0) * (item?.qty || 1)).toFixed(2)}
                 </Text>
               </View>
             </View>

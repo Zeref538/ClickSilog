@@ -84,7 +84,7 @@ const ReceiptView = ({ order }) => {
                 ...typography.bodyBold,
               }
             ]}>
-              {order.id?.slice(-8) || 'N/A'}
+              {order.id || 'N/A'}
             </Text>
           </View>
           <View style={styles.orderRow}>
@@ -168,7 +168,7 @@ const ReceiptView = ({ order }) => {
             Order Items
           </Text>
           {(order.items || []).map((item, idx) => (
-            <View key={idx} style={[
+            <View key={`${order.id || 'order'}-item-${item.itemId || item.name || idx}-${idx}`} style={[
               styles.itemRow,
               {
                 borderBottomColor: theme.colors.border,
@@ -191,7 +191,7 @@ const ReceiptView = ({ order }) => {
                 {item.addOns?.length > 0 && (
                   <View style={styles.addOnsList}>
                     {item.addOns.map((addOn, aIdx) => (
-                      <Text key={aIdx} style={[
+                      <Text key={`${order.id || 'order'}-${item.itemId || item.name || idx}-addon-${addOn.name || aIdx}-${aIdx}`} style={[
                         styles.addOnText,
                         {
                           color: theme.colors.textSecondary,

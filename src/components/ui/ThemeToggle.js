@@ -1,33 +1,70 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import Icon from './Icon';
 import AnimatedButton from './AnimatedButton';
 
+// Helper function to convert hex color to rgba with opacity
+const hexToRgba = (hex, opacity) => {
+  // Remove # if present
+  const cleanHex = hex.replace('#', '');
+  // Parse RGB values
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  // Return rgba string
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
+
 const ThemeToggle = ({ style }) => {
-  const { theme, toggleTheme, themeMode, borderRadius } = useTheme();
+  const { theme, toggleTheme, themeMode, spacing } = useTheme();
 
   return (
     <AnimatedButton
       style={[
-        styles.container, 
-        { 
-          backgroundColor: theme.colors.surface, 
-          borderColor: theme.colors.border,
-          borderRadius: borderRadius.round,
-          width: 44,
-          height: 44,
-        }, 
+        {
+          width: 45,
+          height: 45,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: 'transparent',
+        },
         style
       ]}
       onPress={toggleTheme}
     >
-      <Icon
-        name={themeMode === 'dark' ? 'sunny' : 'moon'}
-        library="ionicons"
-        size={22}
-        color={theme.colors.primary}
-      />
+      <View
+        style={{
+          width: 45,
+          height: 45,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: hexToRgba(theme.colors.secondary || '#7C3AED', 0.1), // Purple for theme toggle
+            borderWidth: 1.5,
+            borderColor: (theme.colors.secondary || '#7C3AED') + '40',
+            padding: spacing.sm,
+            borderRadius: 999, // Perfect circle
+            justifyContent: 'center',
+            alignItems: 'center',
+            shadowColor: theme.colors.secondary || '#7C3AED',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.2,
+            shadowRadius: 4,
+            elevation: 3,
+          }}
+        >
+          <Icon
+            name={themeMode === 'dark' ? 'sunny' : 'moon'}
+            library="ionicons"
+            size={21}
+            color={theme.colors.secondary || '#7C3AED'}
+          />
+        </View>
+      </View>
     </AnimatedButton>
   );
 };

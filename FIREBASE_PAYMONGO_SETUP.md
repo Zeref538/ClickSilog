@@ -567,10 +567,10 @@ Click **"Publish"** to save rules.
 - **Secret Key** (`sk_test_` or `sk_live_`) - NEVER expose in client-side code! Use only in Cloud Functions or backend
 
 **Your PayMongo Keys:**
-- **Test Public Key:** `pk_test_xxxxx`
-- **Test Secret Key:** `sk_test_xxxxx` (Keep secret!)
-- **Live Public Key:** `pk_live_xxxxx`
-- **Live Secret Key:** `sk_live_xxxxx` (Keep secret!)
+- **Test Public Key:** `pk_test_xxxxx` (Replace with your actual test public key)
+- **Test Secret Key:** `sk_test_xxxxx` (Replace with your actual test secret key - Keep secret!)
+- **Live Public Key:** `pk_live_xxxxx` (Replace with your actual live public key)
+- **Live Secret Key:** `sk_live_xxxxx` (Replace with your actual live secret key - Keep secret!)
 
 **Important:** 
 - Use **TEST keys** during development
@@ -735,7 +735,7 @@ PAYMONGO_SECRET_KEY=sk_test_xxxxx
 
 For production deployment, set environment variables in Firebase Console:
 1. Go to Firebase Console → Functions → Configuration
-2. Add environment variable: `PAYMONGO_SECRET_KEY` = `sk_live_xxxxx`
+2. Add environment variable: `PAYMONGO_SECRET_KEY` = `sk_live_xxxxx` (Replace with your actual secret key)
 
 **Option 2: Google Cloud Secret Manager (Recommended for production)**
 

@@ -1,42 +1,45 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, TextInput, FlatList } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TextInput, FlatList } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useCart } from '../../contexts/CartContext';
+import { AuthContext } from '../../contexts/AuthContext';
 import { orderService } from '../../services/orderService';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
+import NotificationModal from '../../components/ui/NotificationModal';
 
 const CashierPaymentScreen = ({ navigation }) => {
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const { userRole } = React.useContext(AuthContext);
   const { items, total, clearCart, updateQty, removeFromCart } = useCart();
   const [loading, setLoading] = useState(false);
-  const [customerName, setCustomerName] = useState('');
-  const [tableNumber, setTableNumber] = useState('');
+  const [tableOrName, setTableOrName] = useState('');
+  const [showOrderPlacedModal, setShowOrderPlacedModal] = useState(false);
 
   const handlePlaceOrder = async () => {
     if (items.length === 0) {
-      Alert.alert('Cart is empty', 'Please add items to the cart first.');
       return;
     }
     try {
       setLoading(true);
+      const info = tableOrName.trim();
+      // If input is numeric, treat as table number; otherwise as customer name
+      const isNumeric = /^\d+$/.test(info);
       await orderService.placeOrder({ 
         items, 
         total, 
         paymentMethod: 'cash', 
         status: 'pending',
-        customerName: customerName.trim() || undefined,
-        tableNumber: tableNumber.trim() || undefined,
+        customerName: !isNumeric && info ? info : undefined,
+        tableNumber: isNumeric && info ? info : undefined,
+        source: 'cashier', // Mark order as created by cashier
       });
       clearCart();
-      setCustomerName('');
-      setTableNumber('');
-      Alert.alert('Order placed', 'Order has been placed successfully!', [{ 
-        text: 'OK', 
-        onPress: () => navigation.navigate('CashierOrdering') 
-      }]);
+      setTableOrName('');
+      setShowOrderPlacedModal(true);
     } catch (e) {
-      Alert.alert('Error', e.message);
+      console.error('Order placement error:', e.message);
+      // Error handling can be added here if needed
     } finally {
       setLoading(false);
     }
@@ -99,7 +102,7 @@ const CashierPaymentScreen = ({ navigation }) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Customer Name and Table Number Inputs */}
+        {/* Table Number or Customer Name Input */}
         <View style={[
           styles.inputSection,
           {
@@ -120,52 +123,22 @@ const CashierPaymentScreen = ({ navigation }) => {
               marginBottom: spacing.sm,
             }
           ]}>
-            Customer Information
+            Order Information
           </Text>
           
-          <View style={[styles.inputRow, { marginBottom: spacing.md }]}>
-            <Icon
-              name="person"
-              library="ionicons"
-              size={20}
-              color={theme.colors.textSecondary}
-              style={{ marginRight: spacing.sm }}
-            />
-            <TextInput
-              value={customerName}
-              onChangeText={setCustomerName}
-              placeholder="Customer name (optional)"
-              placeholderTextColor={theme.colors.textTertiary}
-              style={[
-                styles.input,
-                {
-                  backgroundColor: theme.colors.surfaceVariant,
-                  borderColor: theme.colors.border,
-                  color: theme.colors.text,
-                  borderRadius: borderRadius.md,
-                  padding: spacing.md,
-                  borderWidth: 1.5,
-                  flex: 1,
-                  ...typography.body,
-                }
-              ]}
-            />
-          </View>
-
           <View style={styles.inputRow}>
             <Icon
-              name="restaurant"
+              name="information-circle"
               library="ionicons"
               size={20}
               color={theme.colors.textSecondary}
               style={{ marginRight: spacing.sm }}
             />
             <TextInput
-              value={tableNumber}
-              onChangeText={setTableNumber}
-              placeholder="Table number (optional)"
+              value={tableOrName}
+              onChangeText={setTableOrName}
+              placeholder="Table number or customer name (optional)"
               placeholderTextColor={theme.colors.textTertiary}
-              keyboardType="numeric"
               style={[
                 styles.input,
                 {
@@ -508,6 +481,20 @@ const CashierPaymentScreen = ({ navigation }) => {
           </View>
         )}
       </ScrollView>
+
+      {/* Order Placed Notification Modal */}
+      <NotificationModal
+        visible={showOrderPlacedModal}
+        onClose={() => {
+          setShowOrderPlacedModal(false);
+          navigation.navigate('CashierOrdering');
+        }}
+        title="Order Placed!"
+        message="Order has been placed successfully!"
+        icon="checkmark-circle"
+        iconColor={theme.colors.success}
+        type="success"
+      />
     </View>
   );
 };

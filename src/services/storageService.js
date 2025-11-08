@@ -52,8 +52,10 @@ export const uploadFile = async (path, file, metadata = {}) => {
 
   try {
     const storageRef = firebaseRef(firebaseStorage, path);
+    // Get content type from file.type or blob.type, default to image/jpeg
+    const contentType = (file.type || (file instanceof Blob ? file.type : null)) || 'image/jpeg';
     const uploadMetadata = {
-      contentType: file.type || 'image/jpeg',
+      contentType,
       ...metadata
     };
 
@@ -236,11 +238,15 @@ export const updateFileMetadata = async (path, metadata) => {
  * Upload menu item image
  * @param {string} menuItemId - Menu item ID
  * @param {Blob|File} imageFile - Image file
+ * @param {string} [fileName] - Optional filename (for React Native Blob objects)
  * @returns {Promise<{url: string, path: string}>}
  */
-export const uploadMenuItemImage = async (menuItemId, imageFile) => {
+export const uploadMenuItemImage = async (menuItemId, imageFile, fileName) => {
   const timestamp = Date.now();
-  const extension = imageFile.name?.split('.').pop() || 'jpg';
+  // Handle both File objects and Blob objects (React Native uses Blob)
+  // If fileName is provided, use it; otherwise try to get from imageFile.name
+  const file = fileName || imageFile.name || `image-${timestamp}.jpg`;
+  const extension = file.split('.').pop() || 'jpg';
   const path = `menu-items/${menuItemId}/${timestamp}.${extension}`;
   return uploadFile(path, imageFile, {
     customMetadata: {

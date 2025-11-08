@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ScrollView, Dimensions, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ScrollView, Dimensions, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useRealTimeCollection } from '../../hooks/useRealTime';
 import { useCart } from '../../contexts/CartContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { AuthContext } from '../../contexts/AuthContext';
 import { orderService } from '../../services/orderService';
 import CategoryFilter from '../../components/ui/CategoryFilter';
 import ThemeToggle from '../../components/ui/ThemeToggle';
@@ -13,31 +14,78 @@ import OrderSummary from '../../components/cashier/OrderSummary';
 import PaymentControls from '../../components/cashier/PaymentControls';
 import OrderHistoryTabs from '../../components/cashier/OrderHistoryTabs';
 import ItemCustomizationModal from '../../components/ui/ItemCustomizationModal';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import NotificationModal from '../../components/ui/NotificationModal';
+import CashierPaymentNotification from '../../components/cashier/CashierPaymentNotification';
 
 const { width } = Dimensions.get('window');
 
 const CashierOrderingScreen = () => {
   const navigation = useNavigation();
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const { logout } = React.useContext(AuthContext);
   const { items, total, clearCart, addToCart, calculateTotalPrice } = useCart();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [quickAddItem, setQuickAddItem] = useState(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const scrollRef = useRef(null);
   const cartCount = items.reduce((n, i) => n + (i.qty || 0), 0);
 
-  const { data: categories, loading: categoriesLoading } = useRealTimeCollection('menu_categories', [['active', '==', true]], ['sortOrder', 'asc']);
-  const { data: menuItems, loading: itemsLoading } = useRealTimeCollection('menu', [['available', '==', true]], ['name', 'asc']);
+  const { data: menuItemsRaw, loading: itemsLoading } = useRealTimeCollection('menu', [], ['name', 'asc']);
+  
+  // Filter available items (support both 'available' boolean and 'status' string)
+  const menuItems = useMemo(() => {
+    return (menuItemsRaw || []).filter(item => 
+      item.status === 'available' || item.available === true
+    );
+  }, [menuItemsRaw]);
 
-  const pages = useMemo(() => [{ id: 'all', name: 'All' }, ...(categories || [])], [categories]);
+  // Extract unique categories from menu items
+  const categories = useMemo(() => {
+    const categoryMap = new Map();
+    const categoryOrder = ['silog_meals', 'snacks', 'drinks'];
+    const categoryNames = {
+      'silog_meals': 'Silog Meals',
+      'snacks': 'Snacks',
+      'drinks': 'Drinks & Beverages'
+    };
+    
+    menuItems.forEach(item => {
+      const cat = item.category || item.categoryId;
+      if (cat && !categoryMap.has(cat)) {
+        categoryMap.set(cat, {
+          id: cat,
+          name: categoryNames[cat] || cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')
+        });
+      }
+    });
+    
+    // Sort by predefined order, then alphabetically
+    return Array.from(categoryMap.values()).sort((a, b) => {
+      const aIndex = categoryOrder.indexOf(a.id);
+      const bIndex = categoryOrder.indexOf(b.id);
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [menuItems]);
+
+  const pages = useMemo(() => [{ id: 'all', name: 'All' }, ...categories], [categories]);
+  // Filter out 'all' from categories since CategoryFilter already has a hardcoded "All" button
+  const categoriesForFilter = useMemo(() => categories.filter(c => c.id !== 'all'), [categories]);
+  
   const pageIndex = useMemo(() => {
     if (!selectedCategory) return 0;
     const i = pages.findIndex((p) => p.id === selectedCategory);
     return Math.max(0, i);
   }, [selectedCategory, pages]);
 
-  const filterByCategory = (catId) => (catId && catId !== 'all') ? menuItems.filter((i) => i.categoryId === catId) : menuItems;
+  const filterByCategory = (catId) => (catId && catId !== 'all') 
+    ? menuItems.filter((i) => i.category === catId || i.categoryId === catId) 
+    : menuItems;
 
   const onSelectCategory = (catId) => {
     setSelectedCategory(catId);
@@ -53,13 +101,38 @@ const CashierOrderingScreen = () => {
   };
 
   const filteredBySearch = useMemo(() => {
+    // First apply category filter
+    let filtered = filterByCategory(selectedCategory);
+    
+    // Then apply search filter
     const q = search.trim().toLowerCase();
-    if (!q) return menuItems;
-    return menuItems.filter((m) => m.name?.toLowerCase().includes(q) || m.description?.toLowerCase().includes(q));
-  }, [menuItems, search]);
+    if (q) {
+      filtered = filtered.filter((m) => 
+        m.name?.toLowerCase().includes(q) || 
+        m.description?.toLowerCase().includes(q)
+      );
+    }
+    
+    return filtered;
+  }, [menuItems, search, selectedCategory]);
 
 
-  if (categoriesLoading || itemsLoading) {
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    await logout();
+    try {
+      const rootNav = navigation.getParent() || navigation;
+      rootNav.navigate('Login');
+    } catch (e) {
+      console.log('Navigation handled by AppNavigator after logout');
+    }
+  };
+
+  if (itemsLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
         <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading menu...</Text>
@@ -89,7 +162,7 @@ const CashierOrderingScreen = () => {
               color={theme.colors.primary}
               style={{ marginRight: spacing.sm }}
             />
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={[
                 styles.headerTitle,
                 {
@@ -110,68 +183,111 @@ const CashierOrderingScreen = () => {
               </Text>
             </View>
           </View>
-          <View style={styles.headerActions}>
-            <ThemeToggle style={{ marginRight: spacing.sm }} />
-            <AnimatedButton
-              style={[
-                styles.cartButton,
-                {
-                  backgroundColor: theme.colors.primary,
+        </View>
+        
+        {/* Action Buttons Row */}
+        <View style={[styles.headerActions, { marginTop: spacing.sm, gap: spacing.md }]}>
+          {/* Logout Button */}
+          <AnimatedButton
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: theme.colors.errorLight,
+                borderRadius: borderRadius.round,
+                width: 45,
+                height: 45,
+                borderWidth: 1.5,
+                borderColor: theme.colors.error + '40',
+              }
+            ]}
+            onPress={handleLogout}
+          >
+            <Icon
+              name="log-out-outline"
+              library="ionicons"
+              size={23}
+              color={theme.colors.error}
+            />
+          </AnimatedButton>
+
+          {/* Theme Toggle */}
+          <ThemeToggle />
+
+          {/* Cart Button */}
+          <AnimatedButton
+            style={[
+              styles.cartButton,
+              {
+                backgroundColor: theme.colors.primary,
+                borderRadius: borderRadius.round,
+                width: 45,
+                height: 45,
+                shadowColor: theme.colors.primary,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 4,
+                elevation: 3,
+                position: 'relative',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: spacing.sm,
+              }
+            ]}
+            onPress={() => navigation.navigate('CashierPayment')}
+          >
+            <Icon
+              name="cart"
+              library="ionicons"
+              size={23}
+              color={theme.colors.onPrimary}
+              style={{ margin: 0, padding: 0 }}
+            />
+            {cartCount > 0 && (
+              <View style={[
+                styles.cartBadge, 
+                { 
+                  backgroundColor: theme.colors.error,
                   borderRadius: borderRadius.round,
-                  width: 44,
-                  height: 44,
-                  shadowColor: theme.colors.primary,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 4,
-                  elevation: 3,
-                  position: 'relative',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  padding: 0,
+                  minWidth: 20,
+                  height: 20,
+                  paddingHorizontal: cartCount > 9 ? 4 : 6,
                 }
-              ]}
-              onPress={() => navigation.navigate('CashierPayment')}
-            >
-              <Icon
-                name="cart"
-                library="ionicons"
-                size={22}
-                color={theme.colors.onPrimary}
-                style={{ margin: 0, padding: 0 }}
-              />
-              {cartCount > 0 && (
-                <View style={[
-                  styles.cartBadge,
-                  {
-                    backgroundColor: theme.colors.error,
-                    borderRadius: borderRadius.round,
-                    minWidth: 20,
-                    height: 20,
-                    paddingHorizontal: 6,
-                    position: 'absolute',
-                    top: -4,
-                    right: -4,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderWidth: 2,
-                    borderColor: theme.colors.surface,
-                  }
+              ]}>
+                <Text style={[
+                  styles.cartBadgeText,
+                  { color: '#FFFFFF' }
                 ]}>
-                  <Text style={[
-                    styles.cartBadgeText,
-                    {
-                      color: '#FFFFFF',
-                      ...typography.captionBold,
-                      fontSize: 11,
-                    }
-                  ]}>
-                    {cartCount > 99 ? '99+' : cartCount}
-                  </Text>
-                </View>
-              )}
-            </AnimatedButton>
-          </View>
+                  {cartCount > 99 ? '99+' : cartCount}
+                </Text>
+              </View>
+            )}
+          </AnimatedButton>
+
+          {/* Cash Payment Notification Button with History */}
+          <CashierPaymentNotification />
+
+          {/* Search Button */}
+          <AnimatedButton
+            style={[
+              styles.headerButton,
+              {
+                backgroundColor: theme.colors.surfaceVariant,
+                borderRadius: borderRadius.round,
+                width: 45,
+                height: 45,
+                borderWidth: 1.5,
+                borderColor: theme.colors.border,
+              }
+            ]}
+            onPress={() => setSearchOpen(!searchOpen)}
+          >
+            <Icon
+              name="search"
+              library="ionicons"
+              size={23}
+              color={theme.colors.primary}
+            />
+          </AnimatedButton>
         </View>
       </View>
 
@@ -219,8 +335,11 @@ const CashierOrderingScreen = () => {
                       color: theme.colors.text,
                       flex: 1,
                       ...typography.body,
+                      textAlignVertical: 'center',
+                      paddingVertical: 0,
                     }
                   ]}
+                  textAlignVertical="center"
                 />
                 <AnimatedButton
                   onPress={() => { setSearchOpen(false); setSearch(''); }}
@@ -256,6 +375,7 @@ const CashierOrderingScreen = () => {
                     paddingHorizontal: spacing.md,
                     height: 44,
                     flex: 1,
+                    alignItems: 'center',
                   }
                 ]}
               >
@@ -271,6 +391,8 @@ const CashierOrderingScreen = () => {
                   {
                     color: theme.colors.textTertiary,
                     ...typography.body,
+                    includeFontPadding: false,
+                    textAlignVertical: 'center',
                   }
                 ]}>
                   Search menu items...
@@ -280,11 +402,13 @@ const CashierOrderingScreen = () => {
           </View>
 
           {/* Category Filter */}
-          <CategoryFilter
-            categories={pages}
-            selectedCategory={selectedCategory}
-            onSelectCategory={onSelectCategory}
-          />
+          <View style={{ marginTop: -spacing.xs }}>
+            <CategoryFilter
+              categories={categoriesForFilter}
+              selectedCategory={selectedCategory}
+              onSelectCategory={onSelectCategory}
+            />
+          </View>
 
           {/* Quick Add Buttons - All Items */}
           <ScrollView
@@ -399,6 +523,20 @@ const CashierOrderingScreen = () => {
           calculateTotalPrice={calculateTotalPrice}
         />
       )}
+
+      {/* Logout Confirmation Modal */}
+      <ConfirmationModal
+        visible={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        type="warning"
+        icon="log-out-outline"
+      />
+
     </View>
   );
 };
@@ -424,13 +562,17 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   headerTitle: {
     // Typography handled via theme
@@ -470,6 +612,8 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     // Typography handled via theme
+    includeFontPadding: false,
+    paddingVertical: 0,
   },
   searchButton: {
     flexDirection: 'row',
@@ -481,6 +625,8 @@ const styles = StyleSheet.create({
   },
   searchPlaceholder: {
     // Typography handled via theme
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   searchCancel: {
     justifyContent: 'center',
@@ -496,10 +642,25 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   cartBadge: {
-    // Styled inline
+    position: 'absolute',
+    top: -16,
+    right: -14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 5,
+    zIndex: 10,
   },
   cartBadgeText: {
-    // Typography handled via theme
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.2,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   quickAddScroll: {
     flex: 1,
@@ -539,6 +700,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   emptyText: {
+    // Typography handled via theme
+  },
+  headerButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  notificationBadge: {
+    // Styled inline
+  },
+  notificationBadgeText: {
     // Typography handled via theme
   },
 });

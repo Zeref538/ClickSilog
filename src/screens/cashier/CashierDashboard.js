@@ -49,7 +49,7 @@ const CashierDashboard = () => {
               ...typography.captionBold,
             }
           ]}>
-            Order #{item.id?.slice(-5) || '00000'}
+            Order #{item.id || 'N/A'}
           </Text>
         </View>
       </View>

@@ -15,7 +15,7 @@ const MenuAddOnsManager = () => {
 
   useEffect(() => {
     const u1 = firestoreService.subscribeCollection('menu', { conditions: [], order: ['name', 'asc'], next: setMenu });
-    const u2 = firestoreService.subscribeCollection('add_ons', { conditions: [['available', '==', true]], order: ['createdAt', 'asc'], next: setAddOns });
+    const u2 = firestoreService.subscribeCollection('addons', { conditions: [['available', '==', true]], order: ['createdAt', 'asc'], next: setAddOns });
     const u3 = firestoreService.subscribeCollection('menu_addons', { conditions: [], order: ['sortOrder', 'asc'], next: setMappings });
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); };
   }, []);
@@ -25,9 +25,10 @@ const MenuAddOnsManager = () => {
   }, [menu, selectedMenuId]);
 
   const selectedMenuItem = useMemo(() => menu.find((m) => m.id === selectedMenuId), [menu, selectedMenuId]);
-  const isSilogMeal = selectedMenuItem?.categoryId === 'silog_meals';
-  const isDrink = selectedMenuItem?.categoryId === 'drinks';
-  const isSnack = selectedMenuItem?.categoryId === 'snacks';
+  const category = selectedMenuItem?.category || selectedMenuItem?.categoryId || '';
+  const isSilogMeal = category === 'silog_meals';
+  const isDrink = category === 'drinks';
+  const isSnack = category === 'snacks';
 
   // Allowed add-on names for Silog meals
   const allowedSilogAddOnNames = ['Extra Rice', 'Extra Java Rice', 'Extra Egg', 'Extra Hotdog', 'Extra Spam'];

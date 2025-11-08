@@ -1,16 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Dimensions, BackHandler } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState, useContext } from 'react';
+import { View, Text, StyleSheet, ScrollView, Dimensions, BackHandler, Vibration } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { orderService } from '../../services/orderService';
 import { useTheme } from '../../contexts/ThemeContext';
+import { AuthContext } from '../../contexts/AuthContext';
+import { appConfig } from '../../config/appConfig';
 import ThemeToggle from '../../components/ui/ThemeToggle';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
+import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import NotificationModal from '../../components/ui/NotificationModal';
 
 const PAGES = [
   { id: 'pending', label: 'Pending' },
-  { id: 'ready', label: 'Ready' },
-  { id: 'completed', label: 'Completed' }
+  { id: 'preparing', label: 'Preparing' },
+  { id: 'all', label: 'All' }
 ];
 
 const StatusBadge = ({ status, theme, borderRadius, spacing, typography }) => {
@@ -22,8 +26,8 @@ const StatusBadge = ({ status, theme, borderRadius, spacing, typography }) => {
       icon: 'time-outline',
     },
     preparing: { 
-      bg: theme.colors.secondaryLight + '30', 
-      color: theme.colors.secondary, 
+      bg: theme.colors.warningLight || theme.colors.secondaryLight || theme.colors.primaryContainer, 
+      color: theme.colors.warning || theme.colors.secondary || theme.colors.primary, 
       label: 'Preparing', 
       icon: 'restaurant-outline',
     },
@@ -52,14 +56,19 @@ const StatusBadge = ({ status, theme, borderRadius, spacing, typography }) => {
     label: status, 
     icon: 'help-circle-outline',
   };
+  // For preparing status, use a solid border to avoid white lines
+  const borderColor = status === 'preparing' 
+    ? s.color 
+    : (s.color + '40' || s.color);
+  
   return (
     <View style={[
       styles.badge, 
       { 
         backgroundColor: s.bg, 
-        borderColor: s.color + '40',
+        borderColor: borderColor,
         borderRadius: borderRadius.md,
-        borderWidth: 1.5,
+        borderWidth: status === 'preparing' ? 1.5 : 1.5,
         paddingVertical: spacing.xs,
         paddingHorizontal: spacing.sm,
         flexDirection: 'row',
@@ -96,47 +105,172 @@ const timeAgoMinutes = (iso) => {
 const KDSDashboard = () => {
   const navigation = useNavigation();
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const { logout } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
   const [pageIndex, setPageIndex] = useState(0);
-  const [refreshing, setRefreshing] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showNewOrderNotification, setShowNewOrderNotification] = useState({
+    visible: false,
+    title: '',
+    message: '',
+  });
+  const [newOrdersCount, setNewOrdersCount] = useState(0);
+  const [cancelOrderModal, setCancelOrderModal] = useState({ visible: false, order: null });
+  const orderSubscriptionRef = useRef(null);
   const scrollRef = useRef(null);
   const { width } = Dimensions.get('window');
 
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+            await logout();
+            // Use navigate instead of reset to avoid navigation errors
+            try {
+              const rootNav = navigation.getParent() || navigation;
+              rootNav.navigate('Login');
+            } catch (e) {
+              // AppNavigator will handle routing after logout
+              console.log('Navigation handled by AppNavigator after logout');
+            }
+  };
+
+  const lastOrderIdsRef = useRef(new Set());
+
+  // Play bell sound for new orders
+  const playBellSound = () => {
+    // Use vibration as audio feedback (works on both platforms)
+    // For actual bell sound, install expo-av: npm install expo-av
+    try {
+      // Vibrate as haptic/audio feedback
+      Vibration.vibrate(200); // 200ms vibration
+      
+      // Log for debugging
+      console.log('🔔 Bell sound triggered for new order');
+      
+      // Note: For actual bell sound, install expo-av:
+      // npm install expo-av
+      // Then use: const { Audio } = require('expo-av');
+      // const { sound } = await Audio.Sound.createAsync(require('../assets/sounds/bell.mp3'));
+      // await sound.playAsync();
+    } catch (error) {
+      // Sound library not available - just log
+      console.log('🔔 New order notification (sound not available)');
+    }
+  };
+
+  // Initialize order listener (same as on login)
+  const initializeOrderListener = () => {
+    // Unsubscribe from old listener if exists
+    if (orderSubscriptionRef.current) {
+      orderSubscriptionRef.current();
+      orderSubscriptionRef.current = null;
+    }
+
+    // Reset notification state
+    setNewOrdersCount(0);
+    lastOrderIdsRef.current = new Set();
+
+    // Subscribe to orders
+    const unsub = orderService.subscribeOrders({ 
+      status: undefined, 
+      next: (newOrders) => {
+        const currentOrderIds = new Set(newOrders.map(o => o.id));
+        
+        // Check for new pending orders
+        const newPendingOrders = newOrders.filter(o => 
+          o.status === 'pending' && !lastOrderIdsRef.current.has(o.id)
+        );
+        
+        if (newPendingOrders.length > 0) {
+          // New order detected!
+          setNewOrdersCount(newPendingOrders.length);
+          playBellSound();
+          setShowNewOrderNotification({
+            visible: true,
+            title: 'New Order!',
+            message: `You have ${newPendingOrders.length} new order${newPendingOrders.length > 1 ? 's' : ''} to prepare.`,
+          });
+        }
+        
+        lastOrderIdsRef.current = currentOrderIds;
+        setOrders(newOrders);
+      },
+      error: (err) => {
+        console.error('Order subscription error:', err);
+      }
+    });
+
+    orderSubscriptionRef.current = unsub;
+    return unsub;
+  };
+
+  // Initialize on mount
   useEffect(() => {
-    const unsub = orderService.subscribeOrders({ status: undefined, next: setOrders });
+    const unsub = initializeOrderListener();
     return () => unsub && unsub();
   }, []);
 
   useEffect(() => {
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
-      navigation.navigate('Home');
-      return true;
+      // Show logout confirmation on back button
+      handleLogout();
+      return true; // Prevent default back behavior
     });
     return () => back.remove();
   }, [navigation]);
 
   const onRefresh = async () => {
-    setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 500);
+    // Reinitialize listeners exactly like on login
+    // This ensures fresh data and resets notification state
+    initializeOrderListener();
+    // Reset notification badge
+    setNewOrdersCount(0);
   };
 
   const dataByStatus = useMemo(() => ({
-    pending: orders.filter((o) => o.status === 'pending' || o.status === 'preparing'),
-    ready: orders.filter((o) => o.status === 'ready'),
-    completed: orders.filter((o) => o.status === 'completed' || o.status === 'cancelled')
+    pending: orders.filter((o) => o.status === 'pending'),
+    preparing: orders.filter((o) => o.status === 'preparing' || o.status === 'ready'),
+    all: orders // Show all orders including cancelled
   }), [orders]);
 
   const startOrReady = async (order) => {
-    const next = order.status === 'pending' ? 'preparing' : 'ready';
+    // If pending, change to preparing (stays in pending tab)
+    // If preparing, change to completed (moves to all tab and labeled as complete)
+    const next = order.status === 'pending' ? 'preparing' : 'completed';
     await orderService.updateStatus(order.id, next);
+    // If marking as completed, switch to "All" tab
+    if (next === 'completed') {
+      setPageIndex(2); // Switch to "All" tab (index 2)
+      // Scroll to "All" tab
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ x: width * 2, animated: true });
+      }
+    }
   };
 
   const completeOrder = async (order) => {
+    // Update order status to completed (updateStatus automatically sets completedTime)
     await orderService.updateStatus(order.id, 'completed');
   };
 
   const cancelOrder = async (order) => {
-    await orderService.updateStatus(order.id, 'cancelled');
+    setCancelOrderModal({ visible: true, order });
+  };
+
+  const confirmCancelOrder = async () => {
+    if (cancelOrderModal.order) {
+      const order = cancelOrderModal.order;
+      // Update order with cancelled status and cancellation timestamp
+      await orderService.updateOrder(order.id, {
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: 'kitchen' // Track who cancelled
+      });
+      setCancelOrderModal({ visible: false, order: null });
+    }
   };
 
   const Card = ({ order }) => (
@@ -147,6 +281,7 @@ const KDSDashboard = () => {
         borderColor: theme.colors.border,
         borderRadius: borderRadius.xl,
         padding: spacing.md,
+        paddingTop: spacing.md + spacing.xs, // Add extra top padding to prevent overlap
         marginBottom: spacing.md,
         marginHorizontal: spacing.xs,
         borderWidth: 1,
@@ -182,7 +317,7 @@ const KDSDashboard = () => {
               ...typography.captionBold,
             }
           ]}>
-            {order.id?.slice(-5) || '00000'}
+            {order.id || 'N/A'}
           </Text>
         </View>
         <StatusBadge 
@@ -225,9 +360,17 @@ const KDSDashboard = () => {
           {timeAgoMinutes(order.timestamp)}
         </Text>
       </View>
-      <View style={styles.itemsBlock}>
-        {order.items?.map((i, idx) => (
-          <View key={idx} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
+      <View style={[styles.itemsBlock, { marginBottom: 0 }]}>
+        {order.items?.map((i, idx) => {
+          const isLastItem = idx === (order.items?.length || 0) - 1;
+          return (
+          <View key={`${order.id}-item-${i.itemId || i.name || idx}-${idx}`} style={[
+            styles.itemRow, 
+            { 
+              borderBottomColor: theme.colors.border,
+              paddingBottom: isLastItem ? 0 : spacing.md,
+            }
+          ]}>
             <View style={[
               styles.qtyBadge, 
               { 
@@ -326,7 +469,8 @@ const KDSDashboard = () => {
               )}
             </View>
           </View>
-        ))}
+        );
+        })}
       </View>
       
       {/* Action buttons at bottom */}
@@ -335,8 +479,8 @@ const KDSDashboard = () => {
         { 
           borderTopColor: theme.colors.border,
           borderTopWidth: 1,
-          marginTop: spacing.md,
-          paddingTop: spacing.md,
+          marginTop: 0,
+          paddingTop: spacing.sm, // Reduced padding to remove blank space
         }
       ]}>
         <View style={[styles.actionsRow, { gap: spacing.sm, width: '100%' }]}>
@@ -365,13 +509,19 @@ const KDSDashboard = () => {
                   color={theme.colors.error}
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText, 
-                  { 
-                    color: theme.colors.error,
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText, 
+                    { 
+                      color: theme.colors.error,
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Cancel
                 </Text>
               </AnimatedButton>
@@ -396,13 +546,19 @@ const KDSDashboard = () => {
                   color={theme.colors.onPrimary}
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText,
-                  { 
-                    color: theme.colors.onPrimary,
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText,
+                    { 
+                      color: theme.colors.onPrimary,
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Start
                 </Text>
               </AnimatedButton>
@@ -433,13 +589,19 @@ const KDSDashboard = () => {
                   color={theme.colors.error}
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText, 
-                  { 
-                    color: theme.colors.error,
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText, 
+                    { 
+                      color: theme.colors.error,
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Cancel
                 </Text>
               </AnimatedButton>
@@ -464,13 +626,19 @@ const KDSDashboard = () => {
                   color="#FFFFFF"
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText,
-                  { 
-                    color: '#FFFFFF',
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText,
+                    { 
+                      color: '#FFFFFF',
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Mark Ready
                 </Text>
               </AnimatedButton>
@@ -501,13 +669,19 @@ const KDSDashboard = () => {
                   color={theme.colors.error}
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText, 
-                  { 
-                    color: theme.colors.error,
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText, 
+                    { 
+                      color: theme.colors.error,
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Cancel
                 </Text>
               </AnimatedButton>
@@ -532,17 +706,103 @@ const KDSDashboard = () => {
                   color="#FFFFFF"
                   style={{ marginRight: spacing.xs }}
                 />
-                <Text style={[
-                  styles.actionText,
-                  { 
-                    color: '#FFFFFF',
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.actionText,
+                    { 
+                      color: '#FFFFFF',
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   Complete
                 </Text>
               </AnimatedButton>
             </>
+          )}
+          {order.status === 'completed' && (
+            <View style={[
+              styles.completedBadge,
+              {
+                backgroundColor: theme.colors.successLight,
+                borderColor: theme.colors.success,
+                borderRadius: borderRadius.md,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.md,
+                borderWidth: 1.5,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: spacing.xs,
+                width: '100%',
+              }
+            ]}>
+              <Icon
+                name="checkmark-done-circle"
+                library="ionicons"
+                size={18}
+                color={theme.colors.success}
+              />
+              <Text 
+                style={[
+                  styles.actionText,
+                  { 
+                    color: theme.colors.success,
+                    ...typography.bodyBold,
+                  }
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit={true}
+                minimumFontScale={0.7}
+                allowFontScaling={true}
+              >
+                Order Completed
+              </Text>
+            </View>
+          )}
+          {order.status === 'cancelled' && (
+            <View style={[
+              styles.completedBadge,
+              {
+                backgroundColor: theme.colors.errorLight,
+                borderColor: theme.colors.error,
+                borderRadius: borderRadius.md,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.md,
+                borderWidth: 1.5,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: spacing.xs,
+                width: '100%',
+              }
+            ]}>
+              <Icon
+                name="close-circle"
+                library="ionicons"
+                size={18}
+                color={theme.colors.error}
+              />
+              <Text 
+                style={[
+                  styles.actionText,
+                  { 
+                    color: theme.colors.error,
+                    ...typography.bodyBold,
+                  }
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit={true}
+                minimumFontScale={0.7}
+                allowFontScaling={true}
+              >
+                Order Cancelled
+              </Text>
+            </View>
           )}
         </View>
       </View>
@@ -569,7 +829,7 @@ const KDSDashboard = () => {
           borderBottomColor: theme.colors.border,
           paddingTop: spacing.xl + spacing.sm,
           paddingHorizontal: spacing.md,
-          paddingBottom: spacing.xs, // Reduced padding
+          paddingBottom: spacing.lg, // Increased bottom padding for more spacing
         }
       ]}>
         <View style={styles.header}>
@@ -601,7 +861,53 @@ const KDSDashboard = () => {
             {orders.length} total orders
           </Text>
         </View>
-        <ThemeToggle />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          <AnimatedButton
+            onPress={onRefresh}
+            style={[
+              {
+                backgroundColor: theme.colors.primaryContainer,
+                borderColor: theme.colors.primary + '40',
+                borderRadius: borderRadius.round,
+                width: 44,
+                height: 44,
+                borderWidth: 1.5,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Icon
+              name="refresh"
+              library="ionicons"
+              size={22}
+              color={theme.colors.primary}
+            />
+          </AnimatedButton>
+          <AnimatedButton
+            onPress={handleLogout}
+            style={[
+              {
+                backgroundColor: theme.colors.error + '20',
+                borderColor: theme.colors.error,
+                borderRadius: borderRadius.round,
+                width: 44,
+                height: 44,
+                borderWidth: 1.5,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Icon
+              name="log-out-outline"
+              library="ionicons"
+              size={22}
+              color={theme.colors.error}
+            />
+          </AnimatedButton>
+          <ThemeToggle />
+        </View>
       </View>
 
       <ScrollView
@@ -611,7 +917,7 @@ const KDSDashboard = () => {
           styles.tabs,
           {
             paddingHorizontal: spacing.md,
-            paddingTop: spacing.xs, // Reduced top padding
+            paddingTop: spacing.lg, // Increased top padding for more spacing from header
             paddingBottom: spacing.sm,
             gap: spacing.sm,
           }
@@ -631,9 +937,10 @@ const KDSDashboard = () => {
                 backgroundColor: pageIndex === i ? theme.colors.primary : theme.colors.surfaceVariant,
                 borderColor: pageIndex === i ? theme.colors.primary : theme.colors.border,
                 borderRadius: borderRadius.md,
-                paddingVertical: spacing.xs + 2,
+                paddingVertical: spacing.sm,
                 paddingHorizontal: spacing.md,
                 borderWidth: 1.5,
+                minHeight: 40,
               }
             ]} 
             onPress={() => onTabPress(i)}
@@ -644,6 +951,8 @@ const KDSDashboard = () => {
               { 
                 color: pageIndex === i ? theme.colors.onPrimary : theme.colors.textSecondary,
                 ...typography.captionBold,
+                includeFontPadding: false,
+                textAlignVertical: 'center',
               }
             ]}>
               {t.label}
@@ -658,7 +967,6 @@ const KDSDashboard = () => {
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {PAGES.map((p) => {
           const ordersForPage = dataByStatus[p.id] || [];
@@ -667,6 +975,7 @@ const KDSDashboard = () => {
             <View key={p.id} style={{ width, paddingHorizontal: spacing.md }}>
               <ScrollView 
                 showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
                 contentContainerStyle={{
                   paddingTop: hasOrders ? spacing.sm : 0,
                   paddingBottom: spacing.md,
@@ -712,6 +1021,47 @@ const KDSDashboard = () => {
           );
         })}
       </ScrollView>
+
+      {/* Logout Confirmation Modal */}
+      <ConfirmationModal
+        visible={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+        title="Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
+        icon="log-out-outline"
+        iconColor={theme.colors.warning}
+      />
+
+      {/* Cancel Order Confirmation Modal */}
+      <ConfirmationModal
+        visible={cancelOrderModal.visible}
+        onClose={() => setCancelOrderModal({ visible: false, order: null })}
+        onConfirm={confirmCancelOrder}
+        title="Cancel Order"
+        message={`Are you sure you want to cancel order #${cancelOrderModal.order?.id || ''}? This action cannot be undone.`}
+        confirmText="Cancel Order"
+        cancelText="Keep Order"
+        confirmColor={theme.colors.error}
+        icon="close-circle"
+        iconColor={theme.colors.error}
+      />
+
+      {/* New Order Notification Modal */}
+      <NotificationModal
+        visible={showNewOrderNotification.visible}
+        onClose={() => {
+          setShowNewOrderNotification({ ...showNewOrderNotification, visible: false });
+          setNewOrdersCount(0); // Reset badge count when notification is closed
+        }}
+        title={showNewOrderNotification.title}
+        message={showNewOrderNotification.message}
+        icon="restaurant"
+        iconColor={theme.colors.info || theme.colors.primary}
+        type="info"
+      />
     </View>
   );
 };
@@ -722,9 +1072,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 50,
+    paddingTop: 50, // Keep for status bar spacing
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 0, // Removed to eliminate gap - padding handled inline
     borderBottomWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -805,12 +1155,11 @@ const styles = StyleSheet.create({
   badgeText: {
     // Typography handled via theme
   },
-  itemsBlock: { marginTop: 4, marginBottom: 12 },
+  itemsBlock: { marginTop: 4, marginBottom: 0 },
   itemRow: { 
     flexDirection: 'row', 
     alignItems: 'flex-start', 
-    marginBottom: 12,
-    paddingBottom: 12,
+    marginBottom: 0,
     borderBottomWidth: 1
   },
   qtyBadge: {
@@ -892,6 +1241,12 @@ const styles = StyleSheet.create({
   },
   actionText: {
     // Typography handled via theme
+  },
+  completedBadge: {
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   empty: {
     alignItems: 'center',

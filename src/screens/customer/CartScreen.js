@@ -302,7 +302,7 @@ const CartScreen = ({ navigation, route }) => {
             </AnimatedButton>
           </View>
         }
-        contentContainerStyle={{ padding: 12, paddingBottom: 120 }}
+        contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl * 2.5 }}
         showsVerticalScrollIndicator={false}
       />
 

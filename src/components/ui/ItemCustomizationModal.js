@@ -1,42 +1,88 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
 import { firestoreService } from '../../services/firestoreService';
+import { useTheme } from '../../contexts/ThemeContext';
+import AnimatedButton from './AnimatedButton';
+import Icon from './Icon';
 
-const SelectableRow = ({ label, price, selected, onPress }) => (
+const SelectableRow = ({ label, price, selected, onPress, theme, spacing, borderRadius, typography }) => (
   <TouchableOpacity
-    style={[styles.row, selected && styles.rowSelected]}
+    style={[
+      {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: spacing.md,
+        borderRadius: borderRadius.lg,
+        marginBottom: spacing.sm,
+        backgroundColor: selected ? theme.colors.primaryContainer : theme.colors.surface,
+        borderWidth: 2,
+        borderColor: selected ? theme.colors.primary : theme.colors.border,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: selected ? 0.1 : 0.05,
+        shadowRadius: selected ? 4 : 2,
+        elevation: selected ? 2 : 1,
+      }
+    ]}
     onPress={onPress}
     activeOpacity={0.7}
   >
-    <View style={styles.rowLeft}>
-      <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-        {selected && <Text style={styles.checkmark}>✓</Text>}
+    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <View style={[
+        {
+          width: 24,
+          height: 24,
+          borderRadius: borderRadius.round,
+          borderWidth: 2.5,
+          borderColor: selected ? theme.colors.primary : theme.colors.border,
+          marginRight: spacing.sm,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: selected ? theme.colors.primary : theme.colors.surface,
+        }
+      ]}>
+        {selected && <Text style={{ color: theme.colors.onPrimary, fontSize: 14, fontWeight: '900' }}>✓</Text>}
       </View>
-      <Text style={[styles.rowLabel, selected && styles.rowLabelSelected]}>{label}</Text>
+      <Text style={[
+        {
+          fontSize: 14,
+          fontWeight: selected ? '800' : '700',
+          color: selected ? theme.colors.primary : theme.colors.text,
+          ...typography.body,
+        }
+      ]}>{label}</Text>
     </View>
-    <Text style={[styles.rowPrice, selected && styles.rowPriceSelected]}>₱{Number(price || 0).toFixed(2)}</Text>
+    <Text style={[
+      {
+        fontSize: 14,
+        fontWeight: '800',
+        color: selected ? theme.colors.primary : theme.colors.textSecondary,
+        ...typography.body,
+      }
+    ]}>₱{Number(price || 0).toFixed(2)}</Text>
   </TouchableOpacity>
 );
 
 export default function ItemCustomizationModal({ visible, onClose, item, onConfirm, calculateTotalPrice }) {
+  const { theme, spacing, borderRadius, typography } = useTheme();
   const [addOns, setAddOns] = useState([]);
   const [links, setLinks] = useState([]);
   const [qty, setQty] = useState(1);
-  const [selectedRice, setSelectedRice] = useState(null);
+  const [selectedRice, setSelectedRice] = useState([]); // Array of { id, name, price, qty } - changed to array for multi-select
   const [selectedDrink, setSelectedDrink] = useState(null);
-  const [selectedExtras, setSelectedExtras] = useState([]);
+  const [selectedExtras, setSelectedExtras] = useState([]); // Array of { id, name, price, qty }
   const [notes, setNotes] = useState('');
   const [size, setSize] = useState('small');
 
-  // Category detection
-  const categoryId = item?.categoryId || '';
+  // Category detection (prefer category field, fallback to categoryId for backward compatibility)
+  const categoryId = item?.category || item?.categoryId || '';
   const itemName = (item?.name || '').toLowerCase();
   
   // Category flags
   const isMealOrSilog = categoryId === 'silog_meals' || categoryId === 'meal' || categoryId === 'silog';
   const isSnack = categoryId === 'snacks' || categoryId === 'snack';
   const isDrink = categoryId === 'drinks' || categoryId === 'drink' || /lemonade|tea|water|soft|drink/i.test(itemName);
-  const isSoftdrink = /soft|cola|coke|sprite|royal|pepsi|fanta|soda/i.test(itemName) && categoryId === 'drinks';
+  const isSoftdrink = /soft|cola|coke|sprite|royal|pepsi|fanta|soda/i.test(itemName) && (categoryId === 'drinks' || categoryId === 'drink');
   
   // Allowed add-ons for meal/silog categories (fixed list)
   const allowedMealAddOnNames = [
@@ -56,7 +102,7 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
 
   useEffect(() => {
     if (!visible) return;
-    const u1 = firestoreService.subscribeCollection('add_ons', { conditions: [['available', '==', true]], order: ['createdAt', 'asc'], next: setAddOns });
+    const u1 = firestoreService.subscribeCollection('addons', { conditions: [['available', '==', true]], order: ['createdAt', 'asc'], next: setAddOns });
     const u2 = firestoreService.subscribeCollection('menu_addons', { conditions: [['menuItemId', '==', item.id]], order: ['sortOrder', 'asc'], next: setLinks });
     return () => { u1 && u1(); u2 && u2(); };
   }, [visible, item?.id]);
@@ -64,7 +110,7 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
   useEffect(() => {
     if (!visible) {
       setQty(1);
-      setSelectedRice(null);
+      setSelectedRice([]);
       setSelectedDrink(null);
       setSelectedExtras([]);
       setNotes('');
@@ -72,9 +118,17 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
     }
   }, [visible]);
 
-  const allowedAddOnIds = useMemo(() => new Set(links.map((l) => l.addOnId)), [links]);
-  
+  // Get add-on category helper (same as in AddOnsManager)
+  const getAddOnCategory = (addon) => {
+    if (addon.category) return addon.category;
+    const name = (addon.name || '').toLowerCase();
+    if (name.includes('rice')) return 'rice';
+    if (name.includes('drink') || name.includes('lemonade') || name.includes('tea') || name.includes('water')) return 'drink';
+    return 'extra';
+  };
+
   // Filter add-ons based on category rules
+  // For silog_meals, show all available add-ons (not just those in menu_addons)
   const grouped = useMemo(() => {
     const rice = [];
     const drink = [];
@@ -90,37 +144,62 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
       return { rice: [], drink: [], extra: [] };
     }
     
-    // For meal/silog: only allow specific add-ons
-    addOns.forEach((a) => {
-      if (!allowedAddOnIds.has(a.id)) return;
-      
-      const addOnName = (a.name || '').toLowerCase();
-      
-      if (isMealOrSilog) {
-        // For meal/silog, filter to only allowed add-ons
-        const isAllowed = allowedMealAddOnNames.some(allowedName => 
-          addOnName.includes(allowedName.toLowerCase().replace('extra ', ''))
-        );
+    // For meal/silog: show all available add-ons that match the category
+    if (isMealOrSilog) {
+      const addedIds = new Set(); // Track added addon IDs to prevent duplicates
+      addOns.forEach((a) => {
+        // Skip if already added
+        if (addedIds.has(a.id)) return;
         
-        if (!isAllowed) return;
+        // Check if add-on is linked to silog_meals category
+        const isLinked = a.linkedTo && Array.isArray(a.linkedTo) && a.linkedTo.includes('silog_meals');
+        // Also check if it's in menu_addons (for backward compatibility)
+        const isInMenuAddons = links.some(l => l.addOnId === a.id);
         
-        // Categorize the allowed add-on
-        if (a.category === 'rice') rice.push(a);
-        else if (a.category === 'drink') drink.push(a);
-        else if (a.category === 'extra') extra.push(a);
-      } else {
-        // For other categories (if any), use default behavior
-        if (a.category === 'rice') rice.push(a);
-        else if (a.category === 'drink') drink.push(a);
-        else if (a.category === 'extra') extra.push(a);
-      }
-    });
+        // Show add-on if it's linked to silog_meals OR in menu_addons
+        // For silog meals, show all add-ons that are linked (no name matching required)
+        if (isLinked || isInMenuAddons) {
+          const category = getAddOnCategory(a);
+          if (category === 'rice') {
+            rice.push(a);
+            addedIds.add(a.id);
+          } else if (category === 'drink') {
+            drink.push(a);
+            addedIds.add(a.id);
+          } else if (category === 'extra') {
+            extra.push(a);
+            addedIds.add(a.id);
+          }
+        }
+      });
+    } else {
+      // For other categories, use menu_addons links if available
+      const allowedAddOnIds = new Set(links.map((l) => l.addOnId));
+      addOns.forEach((a) => {
+        if (allowedAddOnIds.has(a.id)) {
+          const category = getAddOnCategory(a);
+          if (category === 'rice') rice.push(a);
+          else if (category === 'drink') drink.push(a);
+          else if (category === 'extra') extra.push(a);
+        }
+      });
+    }
     
     return { rice, drink, extra };
-  }, [addOns, allowedAddOnIds, isMealOrSilog, isSnack, isDrink, isSoftdrink, allowedMealAddOnNames]);
+  }, [addOns, links, isMealOrSilog, isSnack, isDrink, isSoftdrink, allowedMealAddOnNames]);
 
   const selectedAddOns = useMemo(() => {
-    return [selectedRice, selectedDrink, ...selectedExtras].filter(Boolean);
+    // Flatten rice with quantities
+    const riceWithQty = selectedRice.flatMap((rice) => {
+      const qty = rice.qty || 1;
+      return Array(qty).fill(null).map(() => ({ ...rice, qty: 1 }));
+    });
+    // Flatten extras with quantities
+    const extrasWithQty = selectedExtras.flatMap((extra) => {
+      const qty = extra.qty || 1;
+      return Array(qty).fill(null).map(() => ({ ...extra, qty: 1 }));
+    });
+    return [...riceWithQty, selectedDrink, ...extrasWithQty].filter(Boolean);
   }, [selectedRice, selectedDrink, selectedExtras]);
 
   // Size pricing for snacks (default to item price for both sizes)
@@ -137,8 +216,60 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
   const unitPrice = useMemo(() => calculateTotalPrice(basePrice, selectedAddOns), [basePrice, selectedAddOns, calculateTotalPrice]);
   const totalPrice = unitPrice * qty;
 
+  const toggleRice = (id) => {
+    const addon = grouped.rice.find((e) => e.id === id);
+    if (!addon) return;
+    
+    setSelectedRice((prev) => {
+      const existing = prev.find((x) => x.id === id);
+      if (existing) {
+        // If exists, remove it
+        return prev.filter((x) => x.id !== id);
+      } else {
+        // If not exists, add it with qty 1
+        return [...prev, { ...addon, qty: 1 }];
+      }
+    });
+  };
+
+  const updateRiceQty = (id, delta) => {
+    setSelectedRice((prev) => {
+      return prev.map((x) => {
+        if (x.id === id) {
+          const newQty = Math.max(1, (x.qty || 1) + delta);
+          return { ...x, qty: newQty };
+        }
+        return x;
+      });
+    });
+  };
+
   const toggleExtra = (id) => {
-    setSelectedExtras((prev) => prev.find((x) => x.id === id) ? prev.filter((x) => x.id !== id) : [...prev, grouped.extra.find((e) => e.id === id)]);
+    const addon = grouped.extra.find((e) => e.id === id);
+    if (!addon) return;
+    
+    setSelectedExtras((prev) => {
+      const existing = prev.find((x) => x.id === id);
+      if (existing) {
+        // If exists, remove it
+        return prev.filter((x) => x.id !== id);
+      } else {
+        // If not exists, add it with qty 1
+        return [...prev, { ...addon, qty: 1 }];
+      }
+    });
+  };
+
+  const updateExtraQty = (id, delta) => {
+    setSelectedExtras((prev) => {
+      return prev.map((x) => {
+        if (x.id === id) {
+          const newQty = Math.max(1, (x.qty || 1) + delta);
+          return { ...x, qty: newQty };
+        }
+        return x;
+      });
+    });
   };
 
   // Customization options based on category
@@ -161,93 +292,424 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{item.name.replace(/\s*\((Small|Large)\)\s*/i, '')}</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeHeaderBtn} activeOpacity={0.7}>
-            <Text style={styles.closeHeaderText}>✕</Text>
+      <View style={[styles.container, { backgroundColor: theme.colors.background, flex: 1 }]}>
+        <View style={[
+          styles.header,
+          {
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+            paddingTop: spacing.xl + spacing.sm,
+            padding: spacing.lg,
+          }
+        ]}>
+          <Text style={[
+            styles.title,
+            {
+              color: theme.colors.text,
+              ...typography.h2,
+            }
+          ]}>{item.name.replace(/\s*\((Small|Large)\)\s*/i, '')}</Text>
+          <TouchableOpacity onPress={onClose} style={[
+            styles.closeHeaderBtn,
+            {
+              backgroundColor: theme.colors.error,
+              borderRadius: borderRadius.round,
+            }
+          ]} activeOpacity={0.7}>
+            <Text style={[
+              styles.closeHeaderText,
+              {
+                color: theme.colors.onError,
+              }
+            ]}>✕</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={{ flex: 1 }} 
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              padding: spacing.lg,
+              paddingBottom: spacing.xxl + 200, // Extra padding to ensure special instructions is accessible
+            }
+          ]} 
+          showsVerticalScrollIndicator={true}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+        >
           {/* Size Selection - Only for snacks and drinks (not softdrinks) */}
           {showSizeSelection && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Choose Size</Text>
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.sectionTitle,
+                {
+                  color: theme.colors.text,
+                  ...typography.h4,
+                  marginBottom: spacing.md,
+                }
+              ]}>Choose Size</Text>
               <SelectableRow 
                 label="Small" 
                 price={isSnack ? snackSmallPrice : drinkSmallPrice} 
                 selected={size === 'small'} 
-                onPress={() => setSize('small')} 
+                onPress={() => setSize('small')}
+                theme={theme}
+                spacing={spacing}
+                borderRadius={borderRadius}
+                typography={typography}
               />
               <SelectableRow 
                 label="Large" 
                 price={isSnack ? snackLargePrice : drinkLargePrice} 
                 selected={size === 'large'} 
-                onPress={() => setSize('large')} 
+                onPress={() => setSize('large')}
+                theme={theme}
+                spacing={spacing}
+                borderRadius={borderRadius}
+                typography={typography}
               />
             </View>
           )}
 
           {/* Quantity - Always shown */}
-          <View style={styles.qtySection}>
-            <Text style={styles.qtyLabel}>Quantity</Text>
-            <View style={styles.qtyRow}>
-              <TouchableOpacity
-                style={styles.qtyBtn}
+          <View style={[
+            styles.qtySection,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: theme.colors.border,
+              borderRadius: borderRadius.lg,
+              padding: spacing.lg,
+              marginBottom: spacing.lg,
+              borderWidth: 1.5,
+            }
+          ]}>
+            <Text style={[
+              styles.qtyLabel,
+              {
+                color: theme.colors.text,
+                ...typography.h4,
+                marginBottom: spacing.md,
+              }
+            ]}>Quantity</Text>
+            <View style={[styles.qtyRow, { gap: spacing.md }]}>
+              <AnimatedButton
+                style={[
+                  styles.qtyBtn,
+                  {
+                    backgroundColor: theme.colors.primaryContainer,
+                    borderRadius: borderRadius.round,
+                    width: 48,
+                    height: 48,
+                    borderWidth: 1.5,
+                    borderColor: theme.colors.primary + '40',
+                  }
+                ]}
                 onPress={() => setQty(Math.max(1, qty - 1))}
-                activeOpacity={0.7}
               >
-                <Text style={styles.qtyBtnText}>−</Text>
-              </TouchableOpacity>
-              <Text style={styles.qtyText}>{qty}</Text>
-              <TouchableOpacity
-                style={styles.qtyBtn}
+                <Icon
+                  name="remove"
+                  library="ionicons"
+                  size={24}
+                  color={theme.colors.primary}
+                />
+              </AnimatedButton>
+              <View style={[
+                styles.qtyDisplay,
+                {
+                  backgroundColor: theme.colors.primaryContainer,
+                  borderRadius: borderRadius.md,
+                  borderWidth: 1.5,
+                  borderColor: theme.colors.primary + '40',
+                  minWidth: 60,
+                  paddingHorizontal: spacing.md,
+                  paddingVertical: spacing.sm,
+                }
+              ]}>
+                <Text style={[
+                  styles.qtyText,
+                  {
+                    color: theme.colors.primary,
+                    ...typography.h3,
+                    fontWeight: '800',
+                  }
+                ]}>{qty}</Text>
+              </View>
+              <AnimatedButton
+                style={[
+                  styles.qtyBtn,
+                  {
+                    backgroundColor: theme.colors.primaryContainer,
+                    borderRadius: borderRadius.round,
+                    width: 48,
+                    height: 48,
+                    borderWidth: 1.5,
+                    borderColor: theme.colors.primary + '40',
+                  }
+                ]}
                 onPress={() => setQty(qty + 1)}
-                activeOpacity={0.7}
               >
-                <Text style={styles.qtyBtnText}>+</Text>
-              </TouchableOpacity>
+                <Icon
+                  name="add"
+                  library="ionicons"
+                  size={24}
+                  color={theme.colors.primary}
+                />
+              </AnimatedButton>
             </View>
           </View>
 
           {/* Add-ons - Only for meal/silog categories */}
           {showAddOns && grouped.rice.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Choose Your Rice</Text>
-              {grouped.rice.map((a) => (
-                <SelectableRow key={a.id} label={a.name} price={a.price} selected={selectedRice?.id === a.id} onPress={() => setSelectedRice(a)} />
-              ))}
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.sectionTitle,
+                {
+                  color: theme.colors.text,
+                  ...typography.h4,
+                  marginBottom: spacing.md,
+                }
+              ]}>Rice</Text>
+              {grouped.rice.map((a) => {
+                const selected = selectedRice.find((x) => x.id === a.id);
+                const qty = selected?.qty || 0;
+                return (
+                  <View key={a.id} style={{ marginBottom: spacing.sm }}>
+                    <SelectableRow 
+                      label={a.name} 
+                      price={a.price} 
+                      selected={qty > 0} 
+                      onPress={() => toggleRice(a.id)}
+                      theme={theme}
+                      spacing={spacing}
+                      borderRadius={borderRadius}
+                      typography={typography}
+                    />
+                    {qty > 0 && (
+                      <View style={[styles.qtyRow, { marginTop: spacing.xs, gap: spacing.md, justifyContent: 'center' }]}>
+                        <AnimatedButton
+                          style={[
+                            styles.qtyBtnSmall,
+                            {
+                              backgroundColor: theme.colors.primaryContainer,
+                              borderRadius: borderRadius.round,
+                              width: 36,
+                              height: 36,
+                              borderWidth: 1.5,
+                              borderColor: theme.colors.primary + '40',
+                            }
+                          ]}
+                          onPress={() => updateRiceQty(a.id, -1)}
+                        >
+                          <Icon
+                            name="remove"
+                            library="ionicons"
+                            size={18}
+                            color={theme.colors.primary}
+                          />
+                        </AnimatedButton>
+                        <View style={[
+                          styles.qtyDisplaySmall,
+                          {
+                            backgroundColor: theme.colors.primaryContainer,
+                            borderRadius: borderRadius.md,
+                            borderWidth: 1.5,
+                            borderColor: theme.colors.primary + '40',
+                            minWidth: 40,
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: spacing.xs,
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.qtyTextSmall,
+                            {
+                              color: theme.colors.primary,
+                              ...typography.bodyBold,
+                              fontWeight: '800',
+                              textAlign: 'center',
+                            }
+                          ]}>{qty}</Text>
+                        </View>
+                        <AnimatedButton
+                          style={[
+                            styles.qtyBtnSmall,
+                            {
+                              backgroundColor: theme.colors.primaryContainer,
+                              borderRadius: borderRadius.round,
+                              width: 36,
+                              height: 36,
+                              borderWidth: 1.5,
+                              borderColor: theme.colors.primary + '40',
+                            }
+                          ]}
+                          onPress={() => updateRiceQty(a.id, 1)}
+                        >
+                          <Icon
+                            name="add"
+                            library="ionicons"
+                            size={18}
+                            color={theme.colors.primary}
+                          />
+                        </AnimatedButton>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           )}
 
           {showAddOns && grouped.drink.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Add a Drink</Text>
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.sectionTitle,
+                {
+                  color: theme.colors.text,
+                  ...typography.h4,
+                  marginBottom: spacing.md,
+                }
+              ]}>Add a Drink</Text>
               {grouped.drink.map((a) => (
-                <SelectableRow key={a.id} label={a.name} price={a.price} selected={selectedDrink?.id === a.id} onPress={() => setSelectedDrink(a)} />
+                <SelectableRow 
+                  key={a.id} 
+                  label={a.name} 
+                  price={a.price} 
+                  selected={selectedDrink?.id === a.id} 
+                  onPress={() => setSelectedDrink(a)}
+                  theme={theme}
+                  spacing={spacing}
+                  borderRadius={borderRadius}
+                  typography={typography}
+                />
               ))}
             </View>
           )}
 
           {showAddOns && grouped.extra.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Extra Add-ons</Text>
-              {grouped.extra.map((a) => (
-                <SelectableRow key={a.id} label={a.name} price={a.price} selected={!!selectedExtras.find((x) => x.id === a.id)} onPress={() => toggleExtra(a.id)} />
-              ))}
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.sectionTitle,
+                {
+                  color: theme.colors.text,
+                  ...typography.h4,
+                  marginBottom: spacing.md,
+                }
+              ]}>Extra Add-ons</Text>
+              {grouped.extra.map((a) => {
+                const selected = selectedExtras.find((x) => x.id === a.id);
+                const qty = selected?.qty || 0;
+                return (
+                  <View key={a.id} style={{ marginBottom: spacing.sm }}>
+                <SelectableRow 
+                  label={a.name} 
+                  price={a.price} 
+                      selected={qty > 0} 
+                  onPress={() => toggleExtra(a.id)}
+                  theme={theme}
+                  spacing={spacing}
+                  borderRadius={borderRadius}
+                  typography={typography}
+                />
+                    {qty > 0 && (
+                      <View style={[styles.qtyRow, { marginTop: spacing.xs, gap: spacing.md, justifyContent: 'center' }]}>
+                        <AnimatedButton
+                          style={[
+                            styles.qtyBtnSmall,
+                            {
+                              backgroundColor: theme.colors.primaryContainer,
+                              borderRadius: borderRadius.round,
+                              width: 36,
+                              height: 36,
+                              borderWidth: 1.5,
+                              borderColor: theme.colors.primary + '40',
+                            }
+                          ]}
+                          onPress={() => updateExtraQty(a.id, -1)}
+                        >
+                          <Icon
+                            name="remove"
+                            library="ionicons"
+                            size={18}
+                            color={theme.colors.primary}
+                          />
+                        </AnimatedButton>
+                        <View style={[
+                          styles.qtyDisplaySmall,
+                          {
+                            backgroundColor: theme.colors.primaryContainer,
+                            borderRadius: borderRadius.md,
+                            borderWidth: 1.5,
+                            borderColor: theme.colors.primary + '40',
+                            minWidth: 40,
+                            paddingHorizontal: spacing.sm,
+                            paddingVertical: spacing.xs,
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.qtyTextSmall,
+                            {
+                              color: theme.colors.primary,
+                              ...typography.bodyBold,
+                              fontWeight: '800',
+                              textAlign: 'center',
+                            }
+                          ]}>{qty}</Text>
+                        </View>
+                        <AnimatedButton
+                          style={[
+                            styles.qtyBtnSmall,
+                            {
+                              backgroundColor: theme.colors.primaryContainer,
+                              borderRadius: borderRadius.round,
+                              width: 36,
+                              height: 36,
+                              borderWidth: 1.5,
+                              borderColor: theme.colors.primary + '40',
+                            }
+                          ]}
+                          onPress={() => updateExtraQty(a.id, 1)}
+                        >
+                          <Icon
+                            name="add"
+                            library="ionicons"
+                            size={18}
+                            color={theme.colors.primary}
+                          />
+                        </AnimatedButton>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           )}
 
           {/* Special Instructions - Disabled for softdrinks */}
           {showSpecialInstructions && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Special Instructions</Text>
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.sectionTitle,
+                {
+                  color: theme.colors.text,
+                  ...typography.h4,
+                  marginBottom: spacing.md,
+                }
+              ]}>Special Instructions</Text>
               <TextInput
                 placeholder="Add notes (e.g., less ice)"
-                placeholderTextColor="#9CA3AF"
+                placeholderTextColor={theme.colors.textSecondary}
                 value={notes}
                 onChangeText={setNotes}
-                style={styles.input}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: theme.colors.surface,
+                    borderColor: theme.colors.border,
+                    color: theme.colors.text,
+                    borderRadius: borderRadius.lg,
+                    padding: spacing.md,
+                    ...typography.body,
+                  }
+                ]}
                 multiline
                 numberOfLines={3}
               />
@@ -256,19 +718,74 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
 
           {/* Info message for softdrinks */}
           {isSoftdrink && (
-            <View style={styles.section}>
-              <Text style={styles.infoText}>No customization options available for soft drinks.</Text>
+            <View style={[styles.section, { marginBottom: spacing.lg }]}>
+              <Text style={[
+                styles.infoText,
+                {
+                  color: theme.colors.textSecondary,
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                  borderRadius: borderRadius.md,
+                  padding: spacing.md,
+                  ...typography.body,
+                }
+              ]}>No customization options available for soft drinks.</Text>
             </View>
           )}
         </ScrollView>
 
-        <View style={styles.footer}>
-          <View style={styles.totalContainer}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.total}>₱{Number(totalPrice).toFixed(2)}</Text>
+        <View style={[
+          styles.footer,
+          {
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.border,
+            padding: spacing.lg,
+            borderTopWidth: 1.5,
+          }
+        ]}>
+          <View style={[
+            styles.totalContainer,
+            {
+              borderBottomColor: theme.colors.border,
+              borderBottomWidth: 1.5,
+              marginBottom: spacing.md,
+              paddingBottom: spacing.md,
+            }
+          ]}>
+            <Text style={[
+              styles.totalLabel,
+              {
+                color: theme.colors.text,
+                ...typography.h4,
+              }
+            ]}>Total</Text>
+            <Text style={[
+              styles.total,
+              {
+                color: theme.colors.primary,
+                ...typography.h2,
+              }
+            ]}>₱{Number(totalPrice).toFixed(2)}</Text>
           </View>
-          <TouchableOpacity style={styles.addBtn} onPress={confirm} activeOpacity={0.8}>
-            <Text style={styles.addBtnText}>Add to Cart</Text>
+          <TouchableOpacity 
+            style={[
+              styles.addBtn,
+              {
+                backgroundColor: theme.colors.primary,
+                borderRadius: borderRadius.lg,
+                paddingVertical: spacing.md,
+              }
+            ]} 
+            onPress={confirm} 
+            activeOpacity={0.8}
+          >
+            <Text style={[
+              styles.addBtnText,
+              {
+                color: theme.colors.onPrimary,
+                ...typography.button,
+              }
+            ]}>Add to Cart</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -279,208 +796,94 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF'
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    paddingTop: 60,
-    borderBottomWidth: 2,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 2
+    borderBottomWidth: 1.5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3
   },
   title: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#111827',
     flex: 1,
-    letterSpacing: 0.3
   },
   closeHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#EF4444',
+    width: 40,
+    height: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
     elevation: 2
   },
   closeHeaderText: {
     fontSize: 18,
-    color: '#FFFFFF',
     fontWeight: '900'
   },
   scrollContent: {
-    padding: 24,
-    paddingBottom: 120
+    // Padding handled inline
   },
   qtySection: {
-    marginBottom: 28,
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB'
   },
   qtyLabel: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#374151',
-    marginBottom: 16,
-    letterSpacing: 0.3
+    // Typography handled via theme
   },
   qtyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 24
+    // gap handled inline with theme spacing
   },
   qtyBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#E5E7EB',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3
   },
-  qtyBtnText: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#374151'
-  },
-  qtyText: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#111827',
-    minWidth: 44,
-    textAlign: 'center',
-    letterSpacing: 0.3
-  },
-  section: {
-    marginBottom: 26
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111827',
-    marginBottom: 16,
-    letterSpacing: 0.3
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 10,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1
-  },
-  rowSelected: {
-    backgroundColor: '#DBEAFE',
-    borderColor: '#3B82F6',
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 2.5,
-    borderColor: '#D1D5DB',
-    marginRight: 14,
+  qtyBtnSmall: {
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF'
-  },
-  checkboxSelected: {
-    backgroundColor: '#3B82F6',
-    borderColor: '#3B82F6',
-    shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1
+    elevation: 2
   },
-  checkmark: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '900'
+  qtyDisplay: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  rowLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#374151',
-    letterSpacing: 0.2
+  qtyDisplaySmall: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  rowLabelSelected: {
-    color: '#1F2937',
-    fontWeight: '800'
+  qtyText: {
+    textAlign: 'center',
   },
-  rowPrice: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#6B7280',
-    letterSpacing: 0.2
+  qtyTextSmall: {
+    textAlign: 'center',
   },
-  rowPriceSelected: {
-    color: '#3B82F6',
-    fontWeight: '900',
-    fontSize: 15
+  section: {
+    // Margin handled inline
+  },
+  sectionTitle: {
+    // Typography handled via theme
   },
   input: {
-    borderWidth: 2,
-    borderColor: '#E5E7EB',
-    borderRadius: 16,
-    padding: 16,
+    borderWidth: 1.5,
     minHeight: 80,
-    fontSize: 14,
-    color: '#111827',
-    backgroundColor: '#F9FAFB',
     textAlignVertical: 'top',
-    fontWeight: '500'
   },
   footer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderTopWidth: 2,
-    borderTopColor: '#E5E7EB',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -490,50 +893,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    paddingBottom: 18,
-    borderBottomWidth: 1.5,
-    borderBottomColor: '#E5E7EB'
   },
   totalLabel: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#374151',
-    letterSpacing: 0.3
+    // Typography handled via theme
   },
   total: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#3B82F6',
-    letterSpacing: 0.3
+    // Typography handled via theme
   },
   addBtn: {
-    backgroundColor: '#3B82F6',
-    paddingVertical: 18,
-    borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3
   },
   addBtnText: {
-    color: '#FFFFFF',
     fontWeight: '900',
     fontSize: 17,
     letterSpacing: 0.5
   },
   infoText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
     fontStyle: 'italic',
     textAlign: 'center',
-    padding: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#E5E7EB'
   }
 });

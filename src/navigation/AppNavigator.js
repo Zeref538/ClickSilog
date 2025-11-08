@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef } from 'react';
-import { BackHandler } from 'react-native';
+import { BackHandler, View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { AuthContext } from '../contexts/AuthContext';
@@ -8,30 +8,57 @@ import KitchenStack from './KitchenStack';
 import CashierStack from './CashierStack';
 import AdminStack from './AdminStack';
 import HomeScreen from '../screens/HomeScreen';
+import LoginScreen from '../screens/LoginScreen';
+import TableNumberScreen from '../screens/TableNumberScreen';
+import DeveloperScreenSelection from '../screens/DeveloperScreenSelection';
 import { appConfig } from '../config/appConfig';
 
 const RootStack = createStackNavigator();
 
 const AppNavigator = () => {
-  const { userRole, loading } = useContext(AuthContext);
+  const authContext = useContext(AuthContext);
   const navigationRef = useRef(null);
 
-  // Note: Removed auto-redirect for cashier to prevent navigation loops
-  // Cashier users will navigate normally through the app
-  // If redirect is needed on login, it should be handled in AuthContext's auth state change handler
+  // Safely destructure with defaults
+  const userRole = authContext?.userRole || null;
+  const loading = authContext?.loading ?? true;
+  const user = authContext?.user || null;
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' }}>
+        <ActivityIndicator size="large" color="#FFD54F" />
+      </View>
+    );
+  }
 
+  // Determine which stack to show based on role
   let Component = CustomerStack;
   if (userRole === 'kitchen') Component = KitchenStack;
   if (userRole === 'cashier') Component = CashierStack;
   if (userRole === 'admin') Component = AdminStack;
+  // Developer role shows DeveloperScreenSelection instead of a stack
 
-  const initialRoute = appConfig.USE_MOCKS ? 'Home' : 'Main';
+  // In mock mode, show HomeScreen for role selection
+  // In production, show login screens if not authenticated
+  const isAuthenticated = user !== null;
+  const USE_MOCKS = appConfig?.USE_MOCKS ?? false;
+  const showHomeScreen = USE_MOCKS && !isAuthenticated;
+  const showLogin = !USE_MOCKS && !isAuthenticated;
+  const showDeveloperScreen = isAuthenticated && userRole === 'developer';
+
+  // Determine initial route based on authentication and role
+  const getInitialRoute = () => {
+    if (showHomeScreen) return 'Home';
+    if (showLogin) return 'Home'; // Always start at Home for role selection
+    if (showDeveloperScreen) return 'DeveloperScreenSelection';
+    if (isAuthenticated && userRole) return 'Main'; // User is authenticated, go to their stack
+    return 'Home'; // Default fallback
+  };
 
   return (
     <NavigationContainer
-      key={(userRole || 'default') + initialRoute}
+      key={`${userRole || 'default'}-${isAuthenticated ? 'auth' : 'noauth'}`}
       ref={(ref) => {
         navigationRef.current = ref;
         if (ref) {
@@ -45,17 +72,45 @@ const AppNavigator = () => {
           gestureEnabled: true,
           gestureDirection: 'horizontal'
         }} 
-        initialRouteName={initialRoute}
+        initialRouteName={getInitialRoute()}
       >
-        {appConfig.USE_MOCKS && (
+        {/* Home screen for role selection - always available */}
           <RootStack.Screen 
             name="Home" 
             component={HomeScreen}
             options={{
-              gestureEnabled: false
+            gestureEnabled: false,
+            title: 'Select Station'
             }}
           />
-        )}
+        {/* Login and TableNumber screens - always available for navigation */}
+            <RootStack.Screen 
+              name="Login" 
+              component={LoginScreen}
+              options={{
+                gestureEnabled: false,
+                title: 'Login'
+              }}
+            />
+            <RootStack.Screen 
+              name="TableNumber" 
+              component={TableNumberScreen}
+              options={{
+                gestureEnabled: true,
+                title: 'Table Number'
+              }}
+            />
+        {/* Always register DeveloperScreenSelection so it's available when needed */}
+        <RootStack.Screen 
+          name="DeveloperScreenSelection" 
+          component={DeveloperScreenSelection}
+          options={{
+            gestureEnabled: false,
+            title: 'Developer Mode'
+          }}
+        />
+        {/* Main stack - only show when authenticated */}
+        {isAuthenticated && userRole && (
         <RootStack.Screen 
           name="Main" 
           component={Component}
@@ -64,6 +119,7 @@ const AppNavigator = () => {
             gestureDirection: 'horizontal'
           }}
         />
+        )}
       </RootStack.Navigator>
     </NavigationContainer>
   );

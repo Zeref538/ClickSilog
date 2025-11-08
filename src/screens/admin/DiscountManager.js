@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TextInput, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TextInput, Modal } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { firestoreService } from '../../services/firestoreService';
+import { alertService } from '../../services/alertService';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import ThemeToggle from '../../components/ui/ThemeToggle';
 
 const DISCOUNT_TYPES = [
-  { id: 'percentage', label: 'Percentage (%)', icon: 'percent' },
+  { id: 'percentage', label: 'Percentage (%)', icon: 'pricetag' },
   { id: 'fixed', label: 'Fixed Amount (₱)', icon: 'cash' }
 ];
 
-const DiscountManager = () => {
+const DiscountManager = ({ navigation }) => {
   const { theme, spacing, borderRadius, typography } = useTheme();
   const [discounts, setDiscounts] = useState([]);
   const [form, setForm] = useState({ 
@@ -70,13 +71,110 @@ const DiscountManager = () => {
   };
 
   const save = async () => {
-    if (!form.name || !form.code || !form.value) {
-      Alert.alert('Error', 'Name, code, and value are required');
+    // Validation
+    if (!form.name || !form.name.trim()) {
+      alertService.error('Error', 'Discount name is required');
       return;
     }
-    if (form.type === 'percentage' && (Number(form.value) < 0 || Number(form.value) > 100)) {
-      Alert.alert('Error', 'Percentage must be between 0 and 100');
+    
+    if (!form.code || !form.code.trim()) {
+      alertService.error('Error', 'Discount code is required');
       return;
+    }
+    
+    if (!form.value || form.value.trim() === '') {
+      alertService.error('Error', 'Discount value is required');
+      return;
+    }
+    
+    const value = Number(form.value);
+    if (isNaN(value) || value < 0) {
+      alertService.error('Error', 'Discount value must be a valid positive number');
+      return;
+    }
+    
+    if (form.type === 'percentage') {
+      if (value > 100) {
+        alertService.error('Error', 'Percentage must be between 0 and 100');
+        return;
+      }
+    } else {
+      if (value > 999999) {
+        alertService.error('Error', 'Fixed discount amount is too large (maximum: ₱999,999)');
+        return;
+      }
+    }
+    
+    // Code validation
+    const codeRegex = /^[A-Z0-9_-]+$/;
+    if (!codeRegex.test(form.code.trim().toUpperCase())) {
+      alertService.error('Error', 'Discount code can only contain letters, numbers, hyphens, and underscores');
+      return;
+    }
+    
+    if (form.code.trim().length < 3) {
+      alertService.error('Error', 'Discount code must be at least 3 characters');
+      return;
+    }
+    
+    if (form.code.trim().length > 20) {
+      alertService.error('Error', 'Discount code must be 20 characters or less');
+      return;
+    }
+    
+    // Name validation
+    if (form.name.trim().length < 2) {
+      alertService.error('Error', 'Discount name must be at least 2 characters');
+      return;
+    }
+    
+    if (form.name.trim().length > 100) {
+      alertService.error('Error', 'Discount name must be 100 characters or less');
+      return;
+    }
+    
+    // Min order validation
+    if (form.minOrder && form.minOrder.trim() !== '') {
+      const minOrder = Number(form.minOrder);
+      if (isNaN(minOrder) || minOrder < 0) {
+        alertService.error('Error', 'Minimum order must be a valid positive number');
+        return;
+      }
+    }
+    
+    // Max discount validation
+    if (form.maxDiscount && form.maxDiscount.trim() !== '') {
+      const maxDiscount = Number(form.maxDiscount);
+      if (isNaN(maxDiscount) || maxDiscount < 0) {
+        alertService.error('Error', 'Maximum discount must be a valid positive number');
+        return;
+      }
+    }
+    
+    // Date validation
+    if (form.validFrom && form.validFrom.trim() !== '') {
+      const fromDate = new Date(form.validFrom);
+      if (isNaN(fromDate.getTime())) {
+        alertService.error('Error', 'Valid from date is invalid');
+        return;
+      }
+    }
+    
+    if (form.validUntil && form.validUntil.trim() !== '') {
+      const untilDate = new Date(form.validUntil);
+      if (isNaN(untilDate.getTime())) {
+        alertService.error('Error', 'Valid until date is invalid');
+        return;
+      }
+      
+      // Check if validUntil is after validFrom
+      if (form.validFrom && form.validFrom.trim() !== '') {
+        const fromDate = new Date(form.validFrom);
+        if (untilDate < fromDate) {
+          alertService.error('Error', 'Valid until date must be after valid from date');
+          return;
+        }
+      }
     }
     
     const id = editingItem?.id || `discount_${Date.now()}`;
@@ -102,7 +200,7 @@ const DiscountManager = () => {
   };
 
   const remove = async (item) => {
-    Alert.alert('Delete Discount', `Delete ${item.name}?`, [
+    alertService.alert('Delete Discount', `Delete ${item.name}?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => await firestoreService.deleteDocument('discounts', item.id) }
     ]);
@@ -130,6 +228,29 @@ const DiscountManager = () => {
       ]}>
         <View style={styles.headerContent}>
           <View style={styles.titleRow}>
+            <AnimatedButton
+              onPress={() => navigation.goBack()}
+              style={[
+                {
+                  backgroundColor: theme.colors.surfaceVariant,
+                  borderColor: theme.colors.border,
+                  borderRadius: borderRadius.round,
+                  width: 44,
+                  height: 44,
+                  borderWidth: 1.5,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginRight: spacing.sm,
+                }
+              ]}
+            >
+              <Icon
+                name="arrow-back"
+                library="ionicons"
+                size={22}
+                color={theme.colors.text}
+              />
+            </AnimatedButton>
             <Icon
               name="pricetag"
               library="ionicons"
@@ -144,7 +265,7 @@ const DiscountManager = () => {
                 ...typography.h2,
               }
             ]}>
-              Discount Manager
+              Discount Management
             </Text>
           </View>
           <ThemeToggle />
@@ -908,7 +1029,7 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   modalContent: {
-    padding: 24
+    // padding handled inline with theme spacing
   },
   label: {
     marginBottom: 8,

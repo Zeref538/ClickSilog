@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Alert, ScrollView, TextInput } from 'react-native';
+import React, { useState, useContext } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TextInput } from 'react-native';
 import { useCart } from '../../contexts/CartContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { AuthContext } from '../../contexts/AuthContext';
 import { paymentService } from '../../services/paymentService';
 import { orderService } from '../../services/orderService';
+import { alertService } from '../../services/alertService';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
+import ThemeToggle from '../../components/ui/ThemeToggle';
+import CashPaymentConfirmationModal from '../../components/ui/CashPaymentConfirmationModal';
+import PaymentErrorBoundary from '../../components/ui/PaymentErrorBoundary';
 
 const MethodChip = ({ label, selected, onPress, theme, borderRadius, spacing, typography }) => (
   <AnimatedButton
@@ -40,66 +45,139 @@ const MethodChip = ({ label, selected, onPress, theme, borderRadius, spacing, ty
 
 const PaymentScreen = ({ navigation }) => {
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const { user } = useContext(AuthContext);
   const { items, subtotal, total, discount, discountCode, discountAmount, applyDiscountCode, removeDiscount, clearCart } = useCart();
   const [loading, setLoading] = useState(false);
   const [method, setMethod] = useState('gcash');
   const [discountInput, setDiscountInput] = useState('');
   const [applyingDiscount, setApplyingDiscount] = useState(false);
+  const [showCashConfirmation, setShowCashConfirmation] = useState(false);
 
   const handleApplyDiscount = async () => {
     if (!discountInput.trim()) {
-      Alert.alert('Error', 'Please enter a discount code');
+      alertService.error('Invalid Code', 'Please enter a discount code.');
       return;
     }
     setApplyingDiscount(true);
     const result = await applyDiscountCode(discountInput.trim());
     if (result.success) {
-      Alert.alert('Success', `Discount "${result.discount.name}" applied!`);
       setDiscountInput('');
     } else {
-      Alert.alert('Error', result.error || 'Invalid discount code');
+      // Show error popup when discount code is invalid or doesn't exist
+      alertService.error('Invalid Discount Code', result.error || 'The discount code you entered does not exist or is no longer valid. Please check and try again.');
     }
     setApplyingDiscount(false);
   };
 
+  // Order status monitoring is handled by CustomerOrderNotification component
+
   const handlePay = async () => {
     if (items.length === 0) {
-      Alert.alert('Cart is empty');
       return;
     }
+
+    // For cash payments, show confirmation modal
+    if (method === 'cash') {
+      setShowCashConfirmation(true);
+      return;
+    }
+
+    // For GCash, proceed with payment
+    await processGCashPayment();
+  };
+
+  const processGCashPayment = async () => {
+    try {
+      setLoading(true);
+      
+      // Step 1: Create order first to get orderId
+      const orderData = {
+        items,
+        subtotal,
+        total,
+        paymentMethod: 'gcash',
+        status: 'pending',
+        discountCode: discountCode || null,
+        discountAmount: discountAmount || 0,
+        discountName: discount?.name || null,
+        tableNumber: user?.tableNumber || null,
+        userId: user?.uid || null,
+        source: 'customer', // Mark order as created by customer
+      };
+      
+      // Place order first to get orderId
+      const orderResult = await orderService.placeOrder(orderData);
+      const orderId = orderResult?.id || orderResult?.orderId || `order_${Date.now()}`;
+      
+      // Step 2: Process payment via Cloud Function (secure)
+      const paymentResult = await paymentService.processPayment({
+        amount: total,
+        currency: 'PHP',
+        description: `ClickSiLog Order #${orderId}`,
+        orderId,
+        paymentMethod: 'gcash'
+      });
+      
+      if (!paymentResult.success) {
+        throw new Error(paymentResult.error || 'Payment processing failed');
+      }
+      
+      // Step 3: Update order with payment info
+      if (paymentResult.paymentIntentId) {
+        await orderService.updateOrder(orderId, {
+          paymentIntentId: paymentResult.paymentIntentId,
+          paymentStatus: paymentResult.status || 'pending'
+        });
+      }
+      
+      clearCart();
+      // Navigation handled by CustomerOrderNotification component
+      navigation.popToTop();
+    } catch (e) {
+      console.error('Payment error:', e.message);
+      alertService.error('Payment Error', e.message || 'Failed to process payment. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const processCashPayment = async () => {
     try {
       setLoading(true);
       const orderData = {
         items,
         subtotal,
         total,
-        paymentMethod: method,
+        paymentMethod: 'cash',
         status: 'pending',
         discountCode: discountCode || null,
         discountAmount: discountAmount || 0,
         discountName: discount?.name || null
       };
-      if (method === 'gcash') {
-        const payment = await paymentService.createPaymentIntent({
-          amount: Math.round(total * 100),
-          currency: 'PHP',
-          description: 'ClickSiLog order'
-        });
-        if (payment.status !== 'paid') throw new Error('Payment failed');
-        await orderService.placeOrder(orderData);
-      } else {
-        await orderService.placeOrder(orderData);
-      }
+      await orderService.placeOrder({
+        ...orderData,
+        tableNumber: user?.tableNumber || null,
+        userId: user?.uid || null,
+        source: 'customer', // Mark order as created by customer
+      });
       clearCart();
-      Alert.alert('Order placed', 'Thank you! Your order is now in the queue.', [{ text: 'OK', onPress: () => navigation.popToTop() }]);
+      // Navigation handled by CustomerOrderNotification component
+      navigation.popToTop();
     } catch (e) {
-      Alert.alert('Error', e.message);
+      console.error('Payment error:', e.message);
+      // Error will be shown by CustomerOrderNotification or handled gracefully
     } finally {
       setLoading(false);
     }
   };
 
   return (
+    <PaymentErrorBoundary
+      onError={(error, errorInfo) => {
+        console.error('Payment screen error:', error, errorInfo);
+      }}
+      onRetry={processGCashPayment}
+    >
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Modern Header with Progress Indicator */}
       <View style={[
@@ -112,86 +190,91 @@ const PaymentScreen = ({ navigation }) => {
           paddingBottom: spacing.md,
         }
       ]}>
-        <View style={styles.stepper}>
+        <View style={[styles.headerTop, { marginBottom: spacing.md }]}>
+          <ThemeToggle />
+          
+          {/* Compact Cart > Payment Stepper */}
+          <View style={[styles.stepper, { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }]}>
           {/* Step 1: Cart */}
-          <View style={styles.stepItem}>
             <View style={[
               styles.stepCircle,
               {
                 backgroundColor: theme.colors.successLight,
                 borderRadius: borderRadius.round,
-                width: 32,
-                height: 32,
-                marginBottom: spacing.xs,
-                borderWidth: 2,
+                width: 44,
+                height: 44,
+                borderWidth: 1.5,
                 borderColor: theme.colors.success,
+                justifyContent: 'center',
+                alignItems: 'center',
               }
             ]}>
               <Icon
                 name="checkmark"
                 library="ionicons"
-                size={18}
+                size={22}
                 color={theme.colors.success}
               />
-            </View>
-            <Text style={[
-              styles.stepLabel,
-              {
-                color: theme.colors.textSecondary,
-                ...typography.caption,
-              }
-            ]}>
-              Cart
-            </Text>
           </View>
           
           {/* Connector */}
           <View style={[
-            styles.stepConnector,
             {
               backgroundColor: theme.colors.primary,
               height: 2,
-              flex: 1,
-              marginTop: 15,
-              marginHorizontal: spacing.xs,
+                width: 32,
             }
           ]} />
           
           {/* Step 2: Payment */}
-          <View style={styles.stepItem}>
             <View style={[
               styles.stepCircle,
               {
                 backgroundColor: theme.colors.primary,
                 borderRadius: borderRadius.round,
-                width: 32,
-                height: 32,
-                marginBottom: spacing.xs,
-                borderWidth: 2,
+                width: 44,
+                height: 44,
+                borderWidth: 1.5,
                 borderColor: theme.colors.primary,
+                justifyContent: 'center',
+                alignItems: 'center',
               }
             ]}>
               <Icon
                 name="card"
                 library="ionicons"
-                size={18}
+                size={22}
                 color={theme.colors.onPrimary}
               />
             </View>
-            <Text style={[
-              styles.stepLabel,
-              {
-                color: theme.colors.primary,
-                ...typography.captionBold,
-              }
-            ]}>
-              Payment
-            </Text>
           </View>
+          
+          <AnimatedButton
+            onPress={() => navigation.goBack()}
+            style={[
+              {
+                backgroundColor: theme.colors.error + '20',
+                borderColor: theme.colors.error,
+                borderRadius: borderRadius.round,
+                width: 44,
+                height: 44,
+                borderWidth: 1.5,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }
+            ]}
+          >
+            <Icon
+              name="close"
+              library="ionicons"
+              size={22}
+              color={theme.colors.error}
+            />
+          </AnimatedButton>
         </View>
       </View>
 
-      <ScrollView style={[styles.scrollView, { backgroundColor: theme.colors.background }]} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView style={[styles.scrollView, { backgroundColor: theme.colors.background }]} contentContainerStyle={[styles.contentContainer, { padding: spacing.xl, paddingBottom: spacing.xl }]} showsVerticalScrollIndicator={false}>
       <View style={[
         styles.content, 
         { 
@@ -215,7 +298,7 @@ const PaymentScreen = ({ navigation }) => {
           }
         ]}>
           <Icon
-            name="card"
+            name={method === 'gcash' ? 'phone-portrait' : 'cash'}
             library="ionicons"
             size={48}
             color={theme.colors.primary}
@@ -229,7 +312,7 @@ const PaymentScreen = ({ navigation }) => {
             marginBottom: spacing.lg,
           }
         ]}>
-          Select payment method and confirm your order
+          Select payment method
         </Text>
 
         <View style={[styles.methodsRow, { gap: spacing.md, marginBottom: spacing.lg }]}>
@@ -320,14 +403,19 @@ const PaymentScreen = ({ navigation }) => {
                     borderColor: theme.colors.border,
                     color: theme.colors.text,
                     borderRadius: borderRadius.md,
-                    padding: spacing.md,
+                    padding: spacing.sm,
                     borderWidth: 1.5,
                     flex: 1,
                     ...typography.body,
                     marginRight: spacing.sm,
+                    textAlignVertical: 'center',
+                    paddingVertical: spacing.sm,
+                    includeFontPadding: false,
+                    fontSize: 14,
                   }
                 ]}
                 autoCapitalize="characters"
+                textAlignVertical="center"
               />
               <AnimatedButton
                 onPress={handleApplyDiscount}
@@ -337,8 +425,8 @@ const PaymentScreen = ({ navigation }) => {
                   {
                     backgroundColor: theme.colors.primary,
                     borderRadius: borderRadius.md,
-                    paddingVertical: spacing.md,
-                    paddingHorizontal: spacing.lg,
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
                     shadowColor: theme.colors.primary,
                   }
                 ]}
@@ -361,10 +449,10 @@ const PaymentScreen = ({ navigation }) => {
           )}
         </View>
 
-        <View style={[styles.summary, { backgroundColor: theme.colors.borderLight }]}>
+        <View style={[styles.summary, { backgroundColor: theme.colors.borderLight, padding: spacing.xl, marginBottom: spacing.lg }]}>
           <View style={styles.itemsList}>
             {items.map((item, idx) => (
-              <View key={idx} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
+              <View key={`cart-item-${item.id || item.name || idx}-${idx}`} style={[styles.itemRow, { borderBottomColor: theme.colors.border }]}>
                 <View style={styles.itemLeft}>
                   <Text style={[styles.itemName, { color: theme.colors.text }]}>{item.name}</Text>
                   {item.addOns?.length > 0 && (
@@ -428,7 +516,7 @@ const PaymentScreen = ({ navigation }) => {
             { 
               backgroundColor: theme.colors.primary,
               borderRadius: borderRadius.lg,
-              paddingVertical: spacing.lg,
+              paddingVertical: spacing.md,
               shadowColor: theme.colors.primary,
               flexDirection: 'row',
               alignItems: 'center',
@@ -451,13 +539,19 @@ const PaymentScreen = ({ navigation }) => {
                 color={theme.colors.onPrimary}
               />
               <View style={styles.btnContent}>
-                <Text style={[
-                  styles.btnText,
-                  { 
-                    color: theme.colors.onPrimary,
-                    ...typography.bodyBold,
-                  }
-                ]}>
+                <Text 
+                  style={[
+                    styles.btnText,
+                    { 
+                      color: theme.colors.onPrimary,
+                      ...typography.bodyBold,
+                    }
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit={true}
+                  minimumFontScale={0.7}
+                  allowFontScaling={true}
+                >
                   {method === 'cash' ? 'Place Order' : 'Pay with GCash'}
                 </Text>
                 <Text style={[
@@ -476,7 +570,26 @@ const PaymentScreen = ({ navigation }) => {
         </AnimatedButton>
       </View>
     </ScrollView>
+
+    {/* Cash Payment Confirmation Modal */}
+    <CashPaymentConfirmationModal
+      visible={showCashConfirmation}
+      onClose={() => setShowCashConfirmation(false)}
+      onConfirm={processCashPayment}
+      orderData={{
+        items,
+        subtotal,
+        total,
+        paymentMethod: 'cash',
+        status: 'pending',
+        discountCode: discountCode || null,
+        discountAmount: discountAmount || 0,
+        discountName: discount?.name || null
+      }}
+      total={total}
+    />
     </View>
+    </PaymentErrorBoundary>
   );
 };
 
@@ -489,9 +602,14 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   stepper: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
   },
   stepItem: {
@@ -521,10 +639,12 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  contentContainer: { padding: 20, paddingBottom: 32 },
+  contentContainer: { 
+    // padding handled inline with theme spacing
+  },
   content: { 
     borderRadius: 24, 
-    padding: 24, 
+    // padding handled inline with theme spacing 
     borderWidth: 1.5,
     shadowOffset: { width: 0, height: 2 }, 
     shadowOpacity: 0.05, 
@@ -553,11 +673,11 @@ const styles = StyleSheet.create({
     fontWeight: '500', 
     letterSpacing: 0.2 
   },
-  methodsRow: { flexDirection: 'row', gap: 12, justifyContent: 'center', marginBottom: 24 },
+  methodsRow: { flexDirection: 'row', justifyContent: 'center' },
   methodChip: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 16, borderWidth: 2.5, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
   methodText: { fontWeight: '900', fontSize: 15, letterSpacing: 0.3 },
-  summary: { borderRadius: 18, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: 'transparent' },
-  itemsList: { marginBottom: 12 },
+  summary: { borderRadius: 18, borderWidth: 1, borderColor: 'transparent' },
+  itemsList: { marginBottom: 0 },
   itemRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 14, borderBottomWidth: 1.5 },
   itemLeft: { flex: 1, marginRight: 12 },
   itemName: { fontSize: 15, fontWeight: '800', marginBottom: 4, letterSpacing: 0.2 },
@@ -565,7 +685,7 @@ const styles = StyleSheet.create({
   itemNotes: { fontSize: 11, fontStyle: 'italic', fontWeight: '600' },
   itemQty: { fontSize: 13, marginRight: 12, marginTop: 2, fontWeight: '700' },
   itemPrice: { fontSize: 15, fontWeight: '800', minWidth: 80, textAlign: 'right', letterSpacing: 0.2 },
-  divider: { height: 2, marginVertical: 16, borderRadius: 1 },
+  divider: { height: 2, marginVertical: 4, borderRadius: 1 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   summaryLabel: { fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
   summaryValue: { fontSize: 15, fontWeight: '800', letterSpacing: 0.2 },

@@ -7,6 +7,7 @@ import { CartProvider } from './src/contexts/CartContext';
 import { ThemeProvider } from './src/contexts/ThemeContext';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
 import AppNavigator from './src/navigation/AppNavigator';
+import AlertProvider from './src/components/ui/AlertProvider';
 import errorLogger from './src/utils/errorLogger';
 
 export default function App() {
@@ -37,7 +38,9 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <CartProvider>
-            <AppNavigator />
+            <AlertProvider>
+              <AppNavigator />
+            </AlertProvider>
           </CartProvider>
         </AuthProvider>
       </ThemeProvider>

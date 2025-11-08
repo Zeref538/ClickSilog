@@ -2,6 +2,7 @@ import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../../contexts/ThemeContext';
+import { appConfig } from '../../config/appConfig';
 
 const HeaderHomeButton = () => {
   const navigation = useNavigation();
@@ -9,10 +10,26 @@ const HeaderHomeButton = () => {
   
   const goToHome = () => {
     const rootNavigation = navigation.getParent() || navigation;
-    if (rootNavigation.canGoBack()) {
-      rootNavigation.navigate('Home');
+    
+    // Only navigate to Home if it exists (mock mode)
+    if (appConfig.USE_MOCKS) {
+      try {
+        rootNavigation.navigate('Home');
+      } catch (e) {
+        // If Home doesn't exist, try to go back
+        if (rootNavigation.canGoBack()) {
+          rootNavigation.goBack();
+        }
+      }
     } else {
-      rootNavigation.navigate('Home');
+      // In production mode, navigate to Login or go back
+      try {
+        rootNavigation.navigate('Login');
+      } catch (e) {
+        if (rootNavigation.canGoBack()) {
+          rootNavigation.goBack();
+        }
+      }
     }
   };
   

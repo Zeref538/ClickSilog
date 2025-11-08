@@ -145,7 +145,7 @@ const OrderHistoryTabs = () => {
               ...typography.caption,
             }
           ]}>
-            #{item.id?.slice(-5) || '00000'}
+            #{item.id || 'N/A'}
           </Text>
         </View>
 
@@ -163,7 +163,7 @@ const OrderHistoryTabs = () => {
 
         <View style={[styles.itemsList, { marginTop: spacing.xs }]}>
           {item.items?.map((i, idx) => (
-            <View key={idx} style={[styles.itemLine, { marginBottom: spacing.xs / 2 }]}>
+            <View key={`${item.id || 'order'}-item-${i.itemId || i.name || idx}-${idx}`} style={[styles.itemLine, { marginBottom: spacing.xs / 2 }]}>
               <Text style={[
                 styles.itemText,
                 {
@@ -230,10 +230,9 @@ const OrderHistoryTabs = () => {
                 {
                   color: theme.colors.primary,
                   ...typography.captionBold,
-                  textTransform: 'uppercase',
                 }
               ]}>
-                {item.paymentMethod}
+                {item.paymentMethod ? item.paymentMethod.charAt(0).toUpperCase() + item.paymentMethod.slice(1) : item.paymentMethod}
               </Text>
             </View>
           )}

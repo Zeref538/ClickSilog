@@ -13,13 +13,13 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
           style={[
             styles.tab,
             {
-              backgroundColor: !selectedCategory ? theme.colors.primaryContainer : theme.colors.surfaceVariant,
+              backgroundColor: !selectedCategory ? theme.colors.primary : theme.colors.surface,
               borderColor: !selectedCategory ? theme.colors.primary : theme.colors.border,
               borderRadius: borderRadius.md,
               paddingVertical: spacing.sm,
               paddingHorizontal: spacing.lg,
               marginRight: spacing.sm,
-              borderWidth: 1.5,
+              borderWidth: !selectedCategory ? 2 : 1.5,
             }
           ]}
           activeOpacity={0.7}
@@ -29,7 +29,7 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
               styles.tabText,
               {
                 ...typography.bodyMedium,
-                color: !selectedCategory ? theme.colors.primary : theme.colors.text,
+                color: !selectedCategory ? theme.colors.onPrimary || '#FFFFFF' : theme.colors.text,
               },
               !selectedCategory && styles.tabTextActive
             ]}
@@ -37,7 +37,6 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
           >
             {'All'}
           </Text>
-          {!selectedCategory && <View style={[styles.underline, { backgroundColor: theme.colors.primary }]} />}
         </TouchableOpacity>
         {categories.map((c) => (
           <TouchableOpacity
@@ -46,13 +45,13 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
             style={[
               styles.tab,
               {
-                backgroundColor: selectedCategory === c.id ? theme.colors.primaryContainer : theme.colors.surfaceVariant,
+                backgroundColor: selectedCategory === c.id ? theme.colors.primary : theme.colors.surface,
                 borderColor: selectedCategory === c.id ? theme.colors.primary : theme.colors.border,
                 borderRadius: borderRadius.md,
                 paddingVertical: spacing.sm,
                 paddingHorizontal: spacing.lg,
                 marginRight: spacing.sm,
-                borderWidth: 1.5,
+                borderWidth: selectedCategory === c.id ? 2 : 1.5,
               }
             ]}
             activeOpacity={0.7}
@@ -62,7 +61,7 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
                 styles.tabText,
                 {
                   ...typography.bodyMedium,
-                  color: selectedCategory === c.id ? theme.colors.primary : theme.colors.text,
+                  color: selectedCategory === c.id ? theme.colors.onPrimary || '#FFFFFF' : theme.colors.text,
                 },
                 selectedCategory === c.id && styles.tabTextActive
               ]}
@@ -70,7 +69,6 @@ const CategoryFilter = ({ categories = [], selectedCategory, onSelectCategory })
             >
               {c.name}
             </Text>
-            {selectedCategory === c.id && <View style={[styles.underline, { backgroundColor: theme.colors.primary }]} />}
           </TouchableOpacity>
         ))}
       </ScrollView>

@@ -130,29 +130,42 @@ export const getPaymentIntent = async (paymentIntentId) => {
 };
 
 /**
- * Create payment intent via Cloud Function (recommended)
+ * Create payment intent via Cloud Function (recommended - secure)
  */
 export const createPaymentIntentViaFunction = async ({ amount, currency = 'PHP', description, orderId }) => {
   if (appConfig.USE_MOCKS) {
-    return mockCharge({ amount, currency, description });
+    return {
+      success: true,
+      paymentIntentId: `mock_pi_${Date.now()}`,
+      clientKey: `mock_client_${Date.now()}`,
+      status: 'pending'
+    };
   }
 
   try {
-    // Call your Cloud Function endpoint
-    const functionsUrl = `https://us-central1-${appConfig.firebase.projectId}.cloudfunctions.net/createPaymentIntent`;
+    // Get Cloud Function region from config or default to us-central1
+    const region = appConfig.firebase.region || process.env.EXPO_PUBLIC_FIREBASE_REGION || 'us-central1';
+    const functionsUrl = `https://${region}-${appConfig.firebase.projectId}.cloudfunctions.net/createPaymentIntent`;
     
     const response = await axios.post(functionsUrl, {
       amount,
       currency,
       description,
       orderId
+    }, {
+      timeout: 30000, // 30 second timeout
     });
 
-    return {
-      success: true,
-      paymentIntentId: response.data.paymentIntentId,
-      clientKey: response.data.clientKey
-    };
+    if (response.data.success) {
+      return {
+        success: true,
+        paymentIntentId: response.data.paymentIntentId,
+        clientKey: response.data.clientKey,
+        status: 'pending'
+      };
+    } else {
+      throw new Error(response.data.error || 'Failed to create payment intent');
+    }
   } catch (error) {
     console.error('Cloud Function payment intent error:', error);
     return {
@@ -162,9 +175,112 @@ export const createPaymentIntentViaFunction = async ({ amount, currency = 'PHP',
   }
 };
 
+/**
+ * Attach payment method to payment intent
+ */
+export const attachPaymentMethod = async (paymentIntentId, paymentMethodId) => {
+  if (appConfig.USE_MOCKS) {
+    return {
+      success: true,
+      status: 'succeeded',
+      paymentId: `mock_payment_${Date.now()}`
+    };
+  }
+
+  try {
+    const response = await axios.post(
+      `${PAYMONGO_API_URL}/payment_intents/${paymentIntentId}/attach`,
+      {
+        data: {
+          attributes: {
+            payment_method: paymentMethodId
+          }
+        }
+      },
+      {
+        headers: {
+          'Authorization': getAuthHeader(PAYMONGO_SECRET_KEY),
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return {
+      success: true,
+      status: response.data.data.attributes.status,
+      payment: response.data.data.attributes.payment
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response?.data?.errors?.[0]?.detail || error.message
+    };
+  }
+};
+
+/**
+ * Process payment with PayMongo (complete flow)
+ * @param {Object} params - Payment parameters
+ * @param {number} params.amount - Amount in PHP
+ * @param {string} params.currency - Currency code (default: PHP)
+ * @param {string} params.description - Payment description
+ * @param {string} params.orderId - Order ID
+ * @param {string} params.paymentMethod - Payment method (gcash, card, paymaya)
+ * @returns {Promise<Object>} Payment result
+ */
+export const processPayment = async ({ amount, currency = 'PHP', description, orderId, paymentMethod = 'gcash' }) => {
+  if (appConfig.USE_MOCKS) {
+    // Simulate payment processing
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return {
+      success: true,
+      status: 'paid',
+      paymentId: `mock_payment_${Date.now()}`,
+      paymentIntentId: `mock_pi_${Date.now()}`,
+      amount,
+      currency
+    };
+  }
+
+  try {
+    // Step 1: Create payment intent via Cloud Function (secure)
+    const intentResult = await createPaymentIntentViaFunction({
+      amount,
+      currency,
+      description: description || `Order #${orderId}`,
+      orderId
+    });
+
+    if (!intentResult.success) {
+      return intentResult;
+    }
+
+    // Step 2: For now, return the payment intent
+    // In production, you would integrate PayMongo SDK here to collect payment method
+    // and attach it to the payment intent
+    
+    return {
+      success: true,
+      paymentIntentId: intentResult.paymentIntentId,
+      clientKey: intentResult.clientKey,
+      status: 'pending',
+      amount,
+      currency
+    };
+  } catch (error) {
+    console.error('Payment processing error:', error);
+    return {
+      success: false,
+      error: error.message || 'Payment processing failed'
+    };
+  }
+};
+
 export const paymentService = {
   createPaymentIntent,
   createPaymentIntentViaFunction,
-  getPaymentIntent
+  getPaymentIntent,
+  attachPaymentMethod,
+  processPayment
 };
 

@@ -1,56 +1,85 @@
 import React, { createContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/authService';
-import { appConfig } from '../config/appConfig';
 
-export const AuthContext = createContext();
+export const AuthContext = createContext({
+  user: null,
+  userRole: null,
+  loading: true,
+  login: () => {},
+  logout: () => {},
+  setRole: () => {},
+});
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Load user from storage on mount
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChange(async (currentUser) => {
-      if (currentUser) {
-        const role = await authService.getUserRole(currentUser.uid);
-        setUser(currentUser);
-        setUserRole(role);
-        await AsyncStorage.setItem('userToken', currentUser.uid);
-        await AsyncStorage.setItem('userRole', role || 'customer');
-        
-        // Auto-redirect cashier users to Home screen (if USE_MOCKS is enabled)
-        if (role === 'cashier' && appConfig.USE_MOCKS && global.navigationRef?.isReady()) {
-          setTimeout(() => {
-            global.navigationRef?.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-            });
-          }, 100);
+    let isMounted = true;
+    let timeoutId = null;
+    
+    const loadUser = async () => {
+      try {
+        const currentUser = await authService.getCurrentUser();
+        if (isMounted && currentUser) {
+          setUser(currentUser);
+          setUserRole(currentUser.role || 'customer');
         }
-      } else {
-        setUser(null);
-        setUserRole(null);
-        await AsyncStorage.removeItem('userToken');
-        await AsyncStorage.removeItem('userRole');
+      } catch (error) {
+        console.error('Error loading user:', error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
       }
-      setLoading(false);
-    });
-    return unsubscribe;
+    };
+
+    // Set a timeout to ensure loading completes even if getCurrentUser hangs
+    timeoutId = setTimeout(() => {
+      if (isMounted) {
+        console.warn('AuthContext: Loading timeout, setting loading to false');
+        setLoading(false);
+      }
+    }, 2000); // 2 second timeout - faster recovery
+
+    loadUser();
+    
+    return () => {
+      isMounted = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
+
+  const login = async (userData) => {
+    setUser(userData);
+    setUserRole(userData.role || 'customer');
+  };
+
+  const logout = async () => {
+    await authService.signOut();
+    setUser(null);
+    setUserRole(null);
+  };
 
   const setRole = async (role) => {
     setUserRole(role);
     await AsyncStorage.setItem('userRole', role);
-    authService.__setMockRole && authService.__setMockRole(role);
-    
-    // Note: Removed auto-redirect for cashier to prevent navigation loops
-    // Navigation is handled directly in HomeScreen when role is selected
-    // AppNavigator will handle redirects when needed (e.g., on login)
   };
 
   return (
-    <AuthContext.Provider value={{ user, userRole, loading, setRole }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      userRole, 
+      loading, 
+      login, 
+      logout, 
+      setRole 
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -14,10 +14,13 @@ export const appConfig = {
     storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET || 'clicksilog-9a095.firebasestorage.app',
     messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '124998545103',
     appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID || '1:124998545103:web:7ed9728dea16aff1a611ba',
-    measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || 'G-TDKRT5Y79G' // Optional: for analytics
+    measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID || 'G-TDKRT5Y79G', // Optional: for analytics
+    region: process.env.EXPO_PUBLIC_FIREBASE_REGION || 'us-central1' // Cloud Functions region
   },
   
   paymongo: {
+    // API keys should be set via environment variables (EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY and EXPO_PUBLIC_PAYMONGO_SECRET_KEY)
+    // Never commit actual API keys to the repository
     publicKey: process.env.EXPO_PUBLIC_PAYMONGO_PUBLIC_KEY || '',
     secretKey: process.env.EXPO_PUBLIC_PAYMONGO_SECRET_KEY || ''
   }

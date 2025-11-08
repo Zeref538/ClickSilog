@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClickSilog Icon Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+        }
+        h1 {
+            color: #1E1E1E;
+            margin-bottom: 20px;
+        }
+        #iconCanvas {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            margin: 20px 0;
+            background: #FFD54F;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            color: #1E1E1E;
+        }
+        input, select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 12px 24px;
+            background: #FFD54F;
+            color: #1E1E1E;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #F9A825;
+        }
+        .preview {
+            text-align: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>ClickSilog App Icon Generator</h1>
+        <div class="preview">
+            <canvas id="iconCanvas" width="1024" height="1024"></canvas>
+        </div>
+        <div class="controls">
+            <div class="control-group">
+                <label>Background Color:</label>
+                <input type="color" id="bgColor" value="#FFD54F">
+            </div>
+            <div class="control-group">
+                <label>Text Color:</label>
+                <input type="color" id="textColor" value="#1E1E1E">
+            </div>
+            <div class="control-group">
+                <label>Icon Text:</label>
+                <input type="text" id="iconText" value="CS" maxlength="3">
+            </div>
+            <div class="control-group">
+                <label>Font Size:</label>
+                <input type="range" id="fontSize" min="200" max="600" value="400">
+                <span id="fontSizeValue">400</span>
+            </div>
+            <div class="control-group">
+                <label>Icon Style:</label>
+                <select id="iconStyle">
+                    <option value="text">Text Only</option>
+                    <option value="fork-spoon">Fork & Spoon</option>
+                    <option value="bowl">Bowl</option>
+                </select>
+            </div>
+            <button onclick="generateIcon()">Generate Icon</button>
+            <button onclick="downloadIcon()">Download Icon (1024x1024)</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('iconCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function generateIcon() {
+            const bgColor = document.getElementById('bgColor').value;
+            const textColor = document.getElementById('textColor').value;
+            const iconText = document.getElementById('iconText').value || 'CS';
+            const fontSize = parseInt(document.getElementById('fontSize').value);
+            const iconStyle = document.getElementById('iconStyle').value;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, 1024, 1024);
+
+            // Draw background
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            // Draw icon based on style
+            if (iconStyle === 'fork-spoon') {
+                drawForkAndSpoon(ctx, textColor);
+            } else if (iconStyle === 'bowl') {
+                drawBowl(ctx, textColor);
+            }
+
+            // Draw text
+            ctx.fillStyle = textColor;
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(iconText, 512, 512);
+        }
+
+        function drawForkAndSpoon(ctx, color) {
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 20;
+
+            // Fork
+            ctx.fillRect(380, 300, 20, 200);
+            ctx.fillRect(372, 300, 36, 8);
+            ctx.fillRect(372, 320, 36, 8);
+            ctx.fillRect(372, 340, 36, 8);
+
+            // Spoon
+            ctx.fillRect(624, 300, 20, 200);
+            ctx.beginPath();
+            ctx.ellipse(634, 300, 18, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawBowl(ctx, color) {
+            ctx.fillStyle = color;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 20;
+
+            // Bowl
+            ctx.beginPath();
+            ctx.ellipse(512, 600, 280, 80, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.arc(512, 600, 280, 0, Math.PI, true);
+            ctx.stroke();
+        }
+
+        function downloadIcon() {
+            generateIcon();
+            const link = document.createElement('a');
+            link.download = 'icon.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Update font size display
+        document.getElementById('fontSize').addEventListener('input', (e) => {
+            document.getElementById('fontSizeValue').textContent = e.target.value;
+        });
+
+        // Generate on any change
+        document.getElementById('bgColor').addEventListener('change', generateIcon);
+        document.getElementById('textColor').addEventListener('change', generateIcon);
+        document.getElementById('iconText').addEventListener('input', generateIcon);
+        document.getElementById('fontSize').addEventListener('input', generateIcon);
+        document.getElementById('iconStyle').addEventListener('change', generateIcon);
+
+        // Initial generation
+        generateIcon();
+    </script>
+</body>
+</html>
+

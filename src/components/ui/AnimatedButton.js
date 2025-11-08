@@ -1,5 +1,5 @@
 import React from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
+import { TouchableOpacity, StyleSheet, View } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -10,7 +10,8 @@ import Animated, {
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 /**
- * Animated button with press feedback
+ * Animated button with press feedback and responsive text handling
+ * Prevents text wrapping and ensures buttons scale properly
  */
 const AnimatedButton = ({ 
   children, 
@@ -58,10 +59,21 @@ const AnimatedButton = ({
       activeOpacity={activeOpacity}
       {...props}
     >
-      {children}
+      <View style={styles.buttonContent}>
+        {children}
+      </View>
     </AnimatedTouchable>
   );
 };
+
+const styles = StyleSheet.create({
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 1,
+  },
+});
 
 export default AnimatedButton;
 

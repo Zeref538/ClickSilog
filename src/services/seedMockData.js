@@ -2,39 +2,50 @@ export function seedMemoryDb(memoryDb) {
   if (!memoryDb) return;
   const now = new Date().toISOString();
 
-  const categories = [
-    { id: 'silog_meals', name: 'Silog Meals', description: 'Traditional Filipino silog meals with garlic rice and egg', active: true, sortOrder: 1, createdAt: now },
-    { id: 'snacks', name: 'Snacks', description: 'Quick bites and appetizers', active: true, sortOrder: 2, createdAt: now },
-    { id: 'drinks', name: 'Drinks & Beverages', description: 'Refreshments and beverages', active: true, sortOrder: 3, createdAt: now }
+  // Seed Users
+  memoryDb.users = [
+    { id: 'admin1', username: 'admin', password: 'admin123', role: 'admin', status: 'active', displayName: 'Admin User', createdAt: now },
+    { id: 'cashier1', username: 'cashier', password: 'cashier123', role: 'cashier', status: 'active', displayName: 'Cashier User', createdAt: now },
+    { id: 'kitchen1', username: 'kitchen', password: 'kitchen123', role: 'kitchen', status: 'active', displayName: 'Kitchen User', createdAt: now },
+    { id: 'developer1', username: 'developer', password: 'dev123', role: 'developer', status: 'active', displayName: 'Developer User', createdAt: now }
   ];
 
+  // Seed Tables (1-8)
+  memoryDb.tables = Array.from({ length: 8 }, (_, i) => ({
+    id: `table_${i + 1}`,
+    number: i + 1,
+    active: true,
+    createdAt: now
+  }));
+
+  // Categories are now extracted from menu items - no separate collection needed
   const silog = [
-    { id: 'tapsilog_001', name: 'Tapsilog', categoryId: 'silog_meals', price: 75, available: true, description: 'Beef tapa with garlic rice and fried egg', ingredients: ['Beef', 'Garlic Rice', 'Egg', 'Marinade'], preparationTime: 15, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'bangsilog_002', name: 'Bangsilog', categoryId: 'silog_meals', price: 69, available: true, description: 'Bangus with garlic rice and fried egg', ingredients: ['Bangus', 'Garlic Rice', 'Egg'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'porksilog_003', name: 'Porkchopsilog', categoryId: 'silog_meals', price: 69, available: true, description: 'Pork chop with garlic rice and fried egg', ingredients: ['Pork Chop', 'Garlic Rice', 'Egg'], preparationTime: 15, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'tocilog_004', name: 'Tocilog', categoryId: 'silog_meals', price: 65, available: true, description: 'Tocino with garlic rice and fried egg', ingredients: ['Pork Tocino', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'chicksilog_005', name: 'Chicksilog', categoryId: 'silog_meals', price: 69, available: true, description: 'Chicken with garlic rice and fried egg', ingredients: ['Chicken', 'Garlic Rice', 'Egg'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'baconsilog_006', name: 'Baconsilog', categoryId: 'silog_meals', price: 65, available: true, description: 'Bacon with garlic rice and fried egg', ingredients: ['Bacon', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'lechonsilog_007', name: 'Lechonsilog', categoryId: 'silog_meals', price: 69, available: true, description: 'Lechon kawali with garlic rice and fried egg', ingredients: ['Lechon Kawali', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'bbq_rice_008', name: 'BBQ with Rice', categoryId: 'silog_meals', price: 60, available: true, description: 'Pork barbecue with rice', ingredients: ['Pork BBQ', 'Rice'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'shanghai_silog_009', name: 'Shanghai Silog', categoryId: 'silog_meals', price: 55, available: true, description: 'Pork spring rolls with garlic rice and fried egg', ingredients: ['Pork Shanghai', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'hungarian_010', name: 'Hungarian Silog', categoryId: 'silog_meals', price: 70, available: true, description: 'Hungarian sausage with garlic rice and fried egg', ingredients: ['Hungarian Sausage', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'embosilog_011', name: 'Embosilog', categoryId: 'silog_meals', price: 55, available: true, description: 'Embutido with garlic rice and fried egg', ingredients: ['Embutido', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'hotsilog_012', name: 'Hotsilog', categoryId: 'silog_meals', price: 40, available: true, description: 'Hotdog with garlic rice and fried egg', ingredients: ['Hotdog', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'longsilog_013', name: 'Longsilog', categoryId: 'silog_meals', price: 55, available: true, description: 'Longganisa with garlic rice and fried egg', ingredients: ['Longganisa', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'hamsilog_014', name: 'Hamsilog', categoryId: 'silog_meals', price: 40, available: true, description: 'Ham with garlic rice and fried egg', ingredients: ['Ham', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'spamsilog_015', name: 'Spamsilog', categoryId: 'silog_meals', price: 50, available: true, description: 'Spam with garlic rice and fried egg', ingredients: ['Spam', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now }
+    { id: 'tapsilog_001', name: 'Tapsilog', category: 'silog_meals', price: 75, available: true, description: 'Beef tapa with garlic rice and fried egg', ingredients: ['Beef', 'Garlic Rice', 'Egg', 'Marinade'], preparationTime: 15, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'bangsilog_002', name: 'Bangsilog', category: 'silog_meals', price: 69, available: true, description: 'Bangus with garlic rice and fried egg', ingredients: ['Bangus', 'Garlic Rice', 'Egg'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'porksilog_003', name: 'Porkchopsilog', category: 'silog_meals', price: 69, available: true, description: 'Pork chop with garlic rice and fried egg', ingredients: ['Pork Chop', 'Garlic Rice', 'Egg'], preparationTime: 15, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'tocilog_004', name: 'Tocilog', category: 'silog_meals', price: 65, available: true, description: 'Tocino with garlic rice and fried egg', ingredients: ['Pork Tocino', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'chicksilog_005', name: 'Chicksilog', category: 'silog_meals', price: 69, available: true, description: 'Chicken with garlic rice and fried egg', ingredients: ['Chicken', 'Garlic Rice', 'Egg'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'baconsilog_006', name: 'Baconsilog', category: 'silog_meals', price: 65, available: true, description: 'Bacon with garlic rice and fried egg', ingredients: ['Bacon', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'lechonsilog_007', name: 'Lechonsilog', category: 'silog_meals', price: 69, available: true, description: 'Lechon kawali with garlic rice and fried egg', ingredients: ['Lechon Kawali', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'bbq_rice_008', name: 'BBQ with Rice', category: 'silog_meals', price: 60, available: true, description: 'Pork barbecue with rice', ingredients: ['Pork BBQ', 'Rice'], preparationTime: 12, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'shanghai_silog_009', name: 'Shanghai Silog', category: 'silog_meals', price: 55, available: true, description: 'Pork spring rolls with garlic rice and fried egg', ingredients: ['Pork Shanghai', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'hungarian_010', name: 'Hungarian Silog', category: 'silog_meals', price: 70, available: true, description: 'Hungarian sausage with garlic rice and fried egg', ingredients: ['Hungarian Sausage', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'embosilog_011', name: 'Embosilog', category: 'silog_meals', price: 55, available: true, description: 'Embutido with garlic rice and fried egg', ingredients: ['Embutido', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'hotsilog_012', name: 'Hotsilog', category: 'silog_meals', price: 40, available: true, description: 'Hotdog with garlic rice and fried egg', ingredients: ['Hotdog', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'longsilog_013', name: 'Longsilog', category: 'silog_meals', price: 55, available: true, description: 'Longganisa with garlic rice and fried egg', ingredients: ['Longganisa', 'Garlic Rice', 'Egg'], preparationTime: 10, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'hamsilog_014', name: 'Hamsilog', category: 'silog_meals', price: 40, available: true, description: 'Ham with garlic rice and fried egg', ingredients: ['Ham', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'spamsilog_015', name: 'Spamsilog', category: 'silog_meals', price: 50, available: true, description: 'Spam with garlic rice and fried egg', ingredients: ['Spam', 'Garlic Rice', 'Egg'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now }
   ];
 
   const snacks = [
-    { id: 'fries_cup_016', name: 'Fries in a Cup', categoryId: 'snacks', price: 50, available: true, description: 'French fries served in a cup', ingredients: ['Potato Fries'], preparationTime: 5, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'nachos_017', name: 'Nachos', categoryId: 'snacks', price: 50, available: true, description: 'Crispy tortilla chips with cheese', ingredients: ['Tortilla Chips', 'Cheese'], preparationTime: 5, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'cheese_sticks_018', name: 'Cheese Sticks', categoryId: 'snacks', price: 50, available: true, description: 'Breaded mozzarella cheese sticks', ingredients: ['Mozzarella Cheese', 'Bread Crumbs'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'corndog_classic_019', name: 'Classic Corndog', categoryId: 'snacks', price: 60, available: true, description: 'Classic hotdog coated in cornmeal batter', ingredients: ['Hotdog', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'corndog_cheddar_020', name: 'Cheddar Corndog', categoryId: 'snacks', price: 60, available: true, description: 'Hotdog with cheddar cheese coating', ingredients: ['Hotdog', 'Cheddar Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'corndog_classic_mozza_021', name: 'Classic Mozza Corndog', categoryId: 'snacks', price: 70, available: true, description: 'Classic corndog with mozzarella', ingredients: ['Hotdog', 'Mozzarella Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'corndog_full_mozza_022', name: 'Full Mozza Corndog', categoryId: 'snacks', price: 75, available: true, description: 'Corndog with extra mozzarella cheese', ingredients: ['Hotdog', 'Extra Mozzarella Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
-    { id: 'corndog_potato_023', name: 'Potato Corndog', categoryId: 'snacks', price: 75, available: true, description: 'Corndog with potato coating', ingredients: ['Hotdog', 'Potato Coating'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now }
+    { id: 'fries_cup_016', name: 'Fries in a Cup', category: 'snacks', price: 50, available: true, description: 'French fries served in a cup', ingredients: ['Potato Fries'], preparationTime: 5, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'nachos_017', name: 'Nachos', category: 'snacks', price: 50, available: true, description: 'Crispy tortilla chips with cheese', ingredients: ['Tortilla Chips', 'Cheese'], preparationTime: 5, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'cheese_sticks_018', name: 'Cheese Sticks', category: 'snacks', price: 50, available: true, description: 'Breaded mozzarella cheese sticks', ingredients: ['Mozzarella Cheese', 'Bread Crumbs'], preparationTime: 8, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'corndog_classic_019', name: 'Classic Corndog', category: 'snacks', price: 60, available: true, description: 'Classic hotdog coated in cornmeal batter', ingredients: ['Hotdog', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'corndog_cheddar_020', name: 'Cheddar Corndog', category: 'snacks', price: 60, available: true, description: 'Hotdog with cheddar cheese coating', ingredients: ['Hotdog', 'Cheddar Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'corndog_classic_mozza_021', name: 'Classic Mozza Corndog', category: 'snacks', price: 70, available: true, description: 'Classic corndog with mozzarella', ingredients: ['Hotdog', 'Mozzarella Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'corndog_full_mozza_022', name: 'Full Mozza Corndog', category: 'snacks', price: 75, available: true, description: 'Corndog with extra mozzarella cheese', ingredients: ['Hotdog', 'Extra Mozzarella Cheese', 'Cornmeal Batter'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now },
+    { id: 'corndog_potato_023', name: 'Potato Corndog', category: 'snacks', price: 75, available: true, description: 'Corndog with potato coating', ingredients: ['Hotdog', 'Potato Coating'], preparationTime: 7, imageUrl: '', createdAt: now, updatedAt: now }
   ];
 
   const drinksBase = [
@@ -56,28 +67,32 @@ export function seedMemoryDb(memoryDb) {
   ];
 
   const drinks = [
-    ...drinksBase.map((d) => ({ id: d.id, name: d.name, categoryId: 'drinks', price: d.price, available: true, description: d.desc, ingredients: [], preparationTime: 3, imageUrl: '', createdAt: now, updatedAt: now })),
-    ...drinksSoft.map((d) => ({ id: d.id, name: d.name, categoryId: 'drinks', price: d.price, available: true, description: `${d.name} soft drink`, ingredients: [d.name], preparationTime: 1, imageUrl: '', createdAt: now, updatedAt: now })),
-    { id: 'mineral_water_036', name: 'Mineral Water', categoryId: 'drinks', price: 12, available: true, description: 'Bottled mineral water', ingredients: ['Water'], preparationTime: 1, imageUrl: '', createdAt: now, updatedAt: now }
+    ...drinksBase.map((d) => ({ id: d.id, name: d.name, category: 'drinks', price: d.price, available: true, description: d.desc, ingredients: [], preparationTime: 3, imageUrl: '', createdAt: now, updatedAt: now })),
+    ...drinksSoft.map((d) => ({ id: d.id, name: d.name, category: 'drinks', price: d.price, available: true, description: `${d.name} soft drink`, ingredients: [d.name], preparationTime: 1, imageUrl: '', createdAt: now, updatedAt: now })),
+    { id: 'mineral_water_036', name: 'Mineral Water', category: 'drinks', price: 12, available: true, description: 'Bottled mineral water', ingredients: ['Water'], preparationTime: 1, imageUrl: '', createdAt: now, updatedAt: now }
   ];
 
-  memoryDb.menu_categories = categories;
-  memoryDb.menu = [...silog, ...snacks, ...drinks];
+  // Categories are now extracted from menu items - no separate collection needed
+  // Convert menu items to new structure (category field, status instead of available)
+  memoryDb.menu = [...silog, ...snacks, ...drinks].map(item => ({
+    ...item,
+    status: item.available ? 'available' : 'unavailable',
+    customizable: item.category === 'silog_meals',
+    addons: [] // Will be populated via menu_addons mapping for backward compatibility
+  }));
   memoryDb.orders = memoryDb.orders || [];
 
-  // Add-ons
-  memoryDb.add_ons = [
-    // Rice
-    { id: 'rice_plain', name: 'Plain Rice', price: 0, category: 'rice', available: true, createdAt: now },
-    { id: 'rice_java', name: 'Java Rice', price: 15, category: 'rice', available: true, createdAt: now },
-    { id: 'rice_garlic', name: 'Garlic Rice', price: 0, category: 'rice', available: true, createdAt: now },
-    // Drink
-    { id: 'drink_plain', name: 'Plain Water', price: 0, category: 'drink', available: true, createdAt: now },
-    { id: 'drink_ice', name: 'Ice Water', price: 5, category: 'drink', available: true, createdAt: now },
-    // Extra
-    { id: 'extra_egg', name: 'Extra Egg', price: 10, category: 'extra', available: true, createdAt: now },
-    { id: 'extra_rice', name: 'Extra Rice', price: 15, category: 'extra', available: true, createdAt: now }
+  // Add-ons (new structure with linkedTo)
+  memoryDb.addons = [
+    { id: 'addon_extra_rice', name: 'Extra Rice', price: 15, available: true, linkedTo: ['silog_meals'], createdAt: now },
+    { id: 'addon_extra_java_rice', name: 'Extra Java Rice', price: 15, available: true, linkedTo: ['silog_meals'], createdAt: now },
+    { id: 'addon_extra_egg', name: 'Extra Egg', price: 10, available: true, linkedTo: ['silog_meals'], createdAt: now },
+    { id: 'addon_extra_hotdog', name: 'Extra Hotdog', price: 15, available: true, linkedTo: ['silog_meals'], createdAt: now },
+    { id: 'addon_extra_spam', name: 'Extra Spam', price: 20, available: true, linkedTo: ['silog_meals'], createdAt: now }
   ];
+
+  // Keep old add_ons for backward compatibility
+  memoryDb.add_ons = memoryDb.addons;
 
   // menu_addons mapping
   const allRice = ['rice_plain', 'rice_java', 'rice_garlic'];

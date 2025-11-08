@@ -1,45 +1,13 @@
-// Firestore seeding scaffold (for Real Mode). Not used in Mock Mode.
-// Fill menuItems array with the same data as in seedMockData if needed.
+/**
+ * ⚠️ DEPRECATED: This file is not used.
+ * 
+ * Use `src/services/firestoreSeed.js` instead, which is called from:
+ * - Admin Dashboard → Seed Database screen
+ * 
+ * This file is kept for reference only and does not create menu_categories.
+ * Categories are now extracted from menu items' `category` field.
+ */
 
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../config/firebase';
-
-export const seedDatabase = async () => {
-  const categories = [
-    {
-      categoryId: 'silog_meals',
-      name: 'Silog Meals',
-      description: 'Traditional Filipino silog meals with garlic rice and egg',
-      active: true,
-      sortOrder: 1,
-      createdAt: serverTimestamp()
-    },
-    {
-      categoryId: 'snacks',
-      name: 'Snacks',
-      description: 'Quick bites and appetizers',
-      active: true,
-      sortOrder: 2,
-      createdAt: serverTimestamp()
-    },
-    {
-      categoryId: 'drinks',
-      name: 'Drinks & Beverages',
-      description: 'Refreshments and beverages',
-      active: true,
-      sortOrder: 3,
-      createdAt: serverTimestamp()
-    }
-  ];
-
-  const menuItems = [];
-
-  for (const category of categories) {
-    await setDoc(doc(db, 'menu_categories', category.categoryId), category);
-  }
-
-  for (const item of menuItems) {
-    await setDoc(doc(db, 'menu', item.itemId), item);
-  }
-};
+// This file is not imported or used anywhere in the codebase.
+// The actual seeding is done via `src/services/firestoreSeed.js`
 
