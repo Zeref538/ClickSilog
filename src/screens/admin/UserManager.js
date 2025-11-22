@@ -38,18 +38,26 @@ const UserManager = ({ navigation }) => {
   const statuses = ['active', 'inactive'];
 
   useEffect(() => {
+    // Show UI immediately with empty users (non-blocking)
+    setUsers([]);
+
+    // Subscribe to users (non-blocking - data will arrive asynchronously)
     const unsubscribe = firestoreService.subscribeCollection('users', {
       conditions: [],
       order: ['createdAt', 'desc'],
       next: (usersList) => {
-        // Deduplicate users by ID to prevent duplicate entries
-        const uniqueUsers = usersList.reduce((acc, user) => {
-          if (!acc.find(u => u.id === user.id)) {
-            acc.push(user);
-          }
-          return acc;
-        }, []);
-        setUsers(uniqueUsers);
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          // Deduplicate users by ID to prevent duplicate entries
+          const uniqueUsers = usersList.reduce((acc, user) => {
+            if (!acc.find(u => u.id === user.id)) {
+              acc.push(user);
+            }
+            return acc;
+          }, []);
+          setUsers(uniqueUsers);
+        });
       }
     });
     return () => unsubscribe && unsubscribe();
@@ -187,13 +195,78 @@ const UserManager = ({ navigation }) => {
     const user = deleteConfirm.user;
     setDeleteConfirm({ visible: false, user: null });
     
+    if (!user || !user.id) {
+      alertService.error('Error', 'Invalid user data. Cannot delete.');
+      return;
+    }
+    
+    const userIdToDelete = user.id;
+    const userUsername = user.username || 'unknown';
+    
     try {
-      console.log('Deleting user:', user.id);
-      await firestoreService.deleteDocument('users', user.id);
-      alertService.success('Success', 'User deleted successfully');
+      console.log('🗑️ Deleting user from Firestore:', userIdToDelete, 'username:', userUsername);
+      
+      // Optimistically remove from local state immediately for better UX
+      setUsers(prevUsers => prevUsers.filter(u => u.id !== userIdToDelete));
+      
+      // Delete from Firestore - this will throw an error if it fails
+      const result = await firestoreService.deleteDocument('users', userIdToDelete);
+      
+      // Check if deletion was queued for offline sync
+      if (result && result.queued) {
+        alertService.warning('Offline Mode', 'User deletion has been queued and will be processed when connection is restored.');
+        return;
+      }
+      
+      // Additional verification: Check Firestore again after a short delay
+      // The subscription should update automatically, but we verify as a safety check
+      setTimeout(async () => {
+        try {
+          const usersAfterDelete = await firestoreService.getCollectionOnce('users', []);
+          const userStillExists = usersAfterDelete.some(u => u.id === userIdToDelete);
+          if (userStillExists) {
+            console.error('❌ User still exists in Firestore after deletion attempt:', userIdToDelete);
+            // Re-add the user if deletion failed
+            const stillExistingUser = usersAfterDelete.find(u => u.id === userIdToDelete);
+            if (stillExistingUser) {
+              setUsers(prevUsers => {
+                const exists = prevUsers.some(u => u.id === userIdToDelete);
+                if (!exists) {
+                  return [...prevUsers, stillExistingUser];
+                }
+                return prevUsers;
+              });
+            }
+            alertService.error('Deletion Failed', 'User was not deleted from Firestore. Please try again.');
+          } else {
+            console.log('✅ User successfully deleted from Firestore and verified:', userIdToDelete);
+          }
+        } catch (verifyError) {
+          console.error('Error verifying deletion:', verifyError);
+        }
+      }, 2000);
+      
+      console.log('✅ User deletion successful:', userIdToDelete);
+      alertService.success('Success', 'User deleted successfully from Firestore');
     } catch (error) {
-      console.error('Delete user error:', error);
-      alertService.error('Error', error.message || 'Failed to delete user. Please check your connection and try again.');
+      console.error('❌ Delete user error:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        userId: userIdToDelete
+      });
+      
+      // Re-add user to list if deletion failed
+      setUsers(prevUsers => {
+        const exists = prevUsers.some(u => u.id === userIdToDelete);
+        if (!exists) {
+          return [...prevUsers, user];
+        }
+        return prevUsers;
+      });
+      
+      const errorMessage = error.message || 'Failed to delete user from Firestore. Please check your connection and try again.';
+      alertService.error('Deletion Failed', errorMessage);
     }
   };
 
@@ -331,6 +404,8 @@ const UserManager = ({ navigation }) => {
                   borderRadius: borderRadius.round,
                   width: 44,
                   height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
                   borderWidth: 1.5,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -343,6 +418,9 @@ const UserManager = ({ navigation }) => {
                 library="ionicons"
                 size={22}
                 color={theme.colors.text}
+                responsive={true}
+                hitArea={false}
+                style={{ margin: 0 }}
               />
             </AnimatedButton>
             <Icon

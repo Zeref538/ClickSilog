@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet, ScrollView, TextInput } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { firestoreService } from '../../services/firestoreService';
 import { useTheme } from '../../contexts/ThemeContext';
 import AnimatedButton from './AnimatedButton';
@@ -78,6 +79,9 @@ const SelectableRow = ({ label, price, selected, onPress, theme, spacing, border
 
 export default function ItemCustomizationModal({ visible, onClose, item, onConfirm, calculateTotalPrice }) {
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const insets = useSafeAreaInsets();
+  const scrollViewRef = useRef(null);
+  const notesInputRef = useRef(null);
   const [addOns, setAddOns] = useState([]);
   const [links, setLinks] = useState([]);
   const [qty, setQty] = useState(1);
@@ -86,6 +90,9 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
   const [selectedExtras, setSelectedExtras] = useState([]); // Array of { id, name, price, qty }
   const [notes, setNotes] = useState('');
   const [size, setSize] = useState('small');
+  
+  // Calculate footer height: padding (lg*2) + total container (~60) + button (~60) + safe area
+  const footerHeight = spacing.lg * 2 + 60 + 60 + insets.bottom + 20;
 
   // Category detection (prefer category field, fallback to categoryId for backward compatibility)
   const categoryId = item?.category || item?.categoryId || '';
@@ -360,21 +367,24 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
           </TouchableOpacity>
         </View>
         <KeyboardAwareScrollView
+          ref={scrollViewRef}
           enableOnAndroid={true}
           extraScrollHeight={100}
           keyboardShouldPersistTaps="handled"
-          style={{ flex: 1 }}
+          style={{ flex: 1, marginBottom: footerHeight }} // Add marginBottom to account for footer height
           contentContainerStyle={[
             styles.scrollContent,
             {
               padding: spacing.lg,
-              paddingBottom: spacing.xxl + 300, // Extra padding to ensure special instructions is fully accessible above footer
+              paddingBottom: spacing.xxl + footerHeight, // Extra padding to ensure special instructions is fully accessible above footer
             }
           ]} 
           showsVerticalScrollIndicator={true}
           nestedScrollEnabled={true}
           enableResetScrollToCoords={false}
           scrollEnabled={true}
+          bounces={true}
+          alwaysBounceVertical={true}
         >
           {/* Size Selection - Only for snacks and drinks (not softdrinks) */}
           {showSizeSelection && (
@@ -672,6 +682,7 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
                 }
               ]}>Special Instructions</Text>
               <TextInput
+                ref={notesInputRef}
                 placeholder="Add notes (e.g., less ice)"
                 placeholderTextColor={theme.colors.textSecondary}
                 value={notes}
@@ -689,6 +700,8 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
                 ]}
                 multiline
                 numberOfLines={3}
+                textAlignVertical="top"
+                scrollEnabled={true}
               />
             </View>
           )}
@@ -717,8 +730,10 @@ export default function ItemCustomizationModal({ visible, onClose, item, onConfi
             backgroundColor: theme.colors.surface,
             borderTopColor: theme.colors.border,
             padding: spacing.lg,
-            paddingBottom: spacing.lg + 20, // Extra bottom padding for safe area
+            paddingBottom: spacing.lg + insets.bottom, // Use safe area insets for bottom padding
             borderTopWidth: 1.5,
+            zIndex: 10, // Ensure footer is above scroll content
+            elevation: 6, // Android elevation
           }
         ]}>
           <View style={[

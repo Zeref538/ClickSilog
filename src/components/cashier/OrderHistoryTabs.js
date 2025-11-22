@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { useTheme } from '../../contexts/ThemeContext';
 import { orderService } from '../../services/orderService';
+import { firestoreService } from '../../services/firestoreService';
 import Icon from '../ui/Icon';
 import AnimatedButton from '../ui/AnimatedButton';
+import { alertService } from '../../services/alertService';
 
 const TABS = [
   { id: 'pending', label: 'Pending', icon: 'time' },
@@ -16,6 +18,7 @@ const OrderHistoryTabs = () => {
   const [pendingOrders, setPendingOrders] = useState([]);
   const [completedOrders, setCompletedOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     let unsubPending, unsubPreparing, unsubReady, unsubCompleted;
@@ -81,6 +84,53 @@ const OrderHistoryTabs = () => {
       return timeB - timeA; // Most recent first
     });
   }, [activeTab, pendingOrders, completedOrders]);
+
+  const handleResetCompleted = () => {
+    if (completedOrders.length === 0) {
+      alertService.info('Info', 'No completed orders to clear.');
+      return;
+    }
+
+    Alert.alert(
+      'Clear Completed Orders',
+      `Are you sure you want to delete all ${completedOrders.length} completed orders? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            setResetting(true);
+            try {
+              // Delete all completed orders from Firestore
+              const deletePromises = completedOrders.map((order) => {
+                if (order.id) {
+                  return firestoreService.deleteDocument('orders', order.id);
+                }
+                return Promise.resolve();
+              });
+
+              await Promise.all(deletePromises);
+              
+              // Clear local state
+              setCompletedOrders([]);
+              
+              alertService.success('Success', `Cleared ${completedOrders.length} completed orders.`);
+            } catch (error) {
+              console.error('Error clearing completed orders:', error);
+              alertService.error('Error', 'Failed to clear completed orders. Please try again.');
+            } finally {
+              setResetting(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
 
   const renderOrder = ({ item }) => {
     const statusConfig = {
@@ -267,8 +317,9 @@ const OrderHistoryTabs = () => {
           paddingVertical: spacing.sm,
         }
       ]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {TABS.map((tab) => (
+        <View style={styles.tabsHeader}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+            {TABS.map((tab) => (
             <AnimatedButton
               key={tab.id}
               style={[
@@ -325,14 +376,57 @@ const OrderHistoryTabs = () => {
                 </View>
               )}
             </AnimatedButton>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+          {activeTab === 'completed' && completedOrders.length > 0 && (
+            <AnimatedButton
+              style={[
+                styles.resetButton,
+                {
+                  backgroundColor: theme.colors.error + '20',
+                  borderColor: theme.colors.error + '50',
+                  borderRadius: borderRadius.md,
+                  paddingVertical: spacing.sm,
+                  paddingHorizontal: spacing.md,
+                  marginLeft: spacing.sm,
+                  borderWidth: 1.5,
+                  opacity: resetting ? 0.6 : 1,
+                }
+              ]}
+              onPress={handleResetCompleted}
+              disabled={resetting}
+            >
+              {resetting ? (
+                <ActivityIndicator size="small" color={theme.colors.error} />
+              ) : (
+                <>
+                  <Icon
+                    name="trash"
+                    library="ionicons"
+                    size={16}
+                    color={theme.colors.error}
+                    style={{ marginRight: spacing.xs }}
+                  />
+                  <Text style={[
+                    styles.resetButtonText,
+                    {
+                      color: theme.colors.error,
+                      ...typography.captionBold,
+                    }
+                  ]}>
+                    Clear All
+                  </Text>
+                </>
+              )}
+            </AnimatedButton>
+          )}
+        </View>
       </View>
 
       {/* Orders List */}
       <FlatList
         data={currentOrders}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => item?.id ? String(item.id) : `${(item?.name || 'order')}-${index}`}
         renderItem={renderOrder}
         contentContainerStyle={[
           styles.listContent,
@@ -391,6 +485,21 @@ const styles = StyleSheet.create({
   },
   tabsContainer: {
     // Styled inline
+  },
+  tabsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  resetButtonText: {
+    // Typography handled via theme
   },
   tab: {
     flexDirection: 'row',

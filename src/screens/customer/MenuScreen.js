@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useContext } from 'react';
-import { View, FlatList, StyleSheet, Text, ActivityIndicator, ScrollView, Dimensions, TouchableOpacity, BackHandler, TextInput } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, FlatList, StyleSheet, Text, ActivityIndicator, ScrollView, useWindowDimensions, TouchableOpacity, BackHandler, TextInput, Platform } from 'react-native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRealTimeCollection } from '../../hooks/useRealTime';
 import { useCart } from '../../contexts/CartContext';
@@ -13,8 +13,16 @@ import ThemeToggle from '../../components/ui/ThemeToggle';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import CustomerOrderNotification from '../../components/customer/CustomerOrderNotification';
-import ConfirmationModal from '../../components/ui/ConfirmationModal';
+import StaffUnlockModal from '../../components/ui/StaffUnlockModal';
 import { scale } from '../../utils/responsive';
+
+// Warm color palette
+const PALETTE = {
+  red: '#E52020',
+  orange: '#FBA518',
+  yellow: '#F9CB43',
+  olive: '#A89C29',
+};
 
 // Helper function to convert hex color to rgba with opacity
 const hexToRgba = (hex, opacity) => {
@@ -37,22 +45,42 @@ const MenuScreen = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [staffModalVisible, setStaffModalVisible] = useState(false);
   const scrollRef = useRef(null);
-  const { width } = Dimensions.get('window');
+  const categoryScrollRef = useRef(null);
+  const isSwipingRef = useRef(false);
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const numColumns = isLandscape ? 4 : 2;
   const cartCount = items.reduce((n, i) => n + (i.qty || 0), 0);
 
-  const handleLogout = () => {
-    setShowLogoutModal(true);
+  // Navigate back to OrderMode (selection screen) without logging out
+  const goToOrderMode = () => {
+    setStaffModalVisible(false);
+    const rootNavigation = navigation.getParent()?.getParent() || navigation.getParent() || navigation;
+    rootNavigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'OrderMode' }],
+      })
+    );
   };
 
-  const confirmLogout = async () => {
-    setShowLogoutModal(false);
-            await logout();
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'TableNumber' }]
-            });
+  const handleStaffUnlockSuccess = async () => {
+    setStaffModalVisible(false);
+    try {
+      await logout();
+    } catch (error) {
+      console.warn('Customer logout error:', error);
+    }
+
+    const rootNavigation = navigation.getParent()?.getParent() || navigation.getParent() || navigation;
+    rootNavigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'OrderMode' }],
+      })
+    );
   };
 
   const { data: menuItemsRaw, loading: itemsLoading } = useRealTimeCollection('menu', [], ['name', 'asc']);
@@ -60,10 +88,21 @@ const MenuScreen = () => {
   // Filter available items (support both 'available' boolean and 'status' string)
   // Hide deactivated items from customer
   const menuItems = useMemo(() => {
-    return (menuItemsRaw || []).filter(item => 
+    const raw = menuItemsRaw || [];
+    // Dedupe by id - ensure that we don't render duplicates from data source
+    const map = new Map();
+    raw.forEach((it) => {
+      const id = it.id || `${it.name}-${it.price}`;
+      if (!map.has(id)) map.set(id, it);
+    });
+    if (raw.length !== map.size) {
+      console.warn(`MenuScreen: deduped ${raw.length - map.size} duplicated menu items`);
+    }
+    return Array.from(map.values()).filter(item => 
       (item.status === 'available' || item.available === true) &&
       item.status !== 'deactivated' &&
-      item.available !== false
+      item.available !== false &&
+      !(item.category === 'drinks' && /\(\s*Large\s*\)/i.test(item.name || ''))
     );
   }, [menuItemsRaw]);
 
@@ -74,7 +113,7 @@ const MenuScreen = () => {
     const categoryNames = {
       'silog_meals': 'Silog Meals',
       'snacks': 'Snacks',
-      'drinks': 'Drinks & Beverages'
+      'drinks': 'Beverages'
     };
     
     menuItems.forEach(item => {
@@ -98,37 +137,53 @@ const MenuScreen = () => {
     });
   }, [menuItems]);
 
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      // Show logout confirmation on back button
-      handleLogout();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [navigation]);
+  // Create pages array: All + categories
+  const pages = useMemo(() => [{ id: null, name: 'All' }, ...categories], [categories]);
 
-  const pages = useMemo(() => [{ id: 'all', name: 'All' }, ...categories], [categories]);
+  // Get current page index based on selected category
   const pageIndex = useMemo(() => {
-    if (!selectedCategory) return 0;
+    if (selectedCategory === null || selectedCategory === undefined) return 0;
     const i = pages.findIndex((p) => p.id === selectedCategory);
     return Math.max(0, i);
   }, [selectedCategory, pages]);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      // Short press: back to order mode (no logout)
+      goToOrderMode();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, []);
+
+  // Sync scroll position when selectedCategory changes (but not from swipe gestures)
+  useEffect(() => {
+    if (categoryScrollRef.current && !isSwipingRef.current) {
+      const targetIndex = pageIndex;
+      categoryScrollRef.current.scrollTo({ x: width * targetIndex, animated: true });
+    }
+    // Reset flag after scrolling
+    isSwipingRef.current = false;
+  }, [selectedCategory, width, pageIndex]);
 
   const filterByCategory = (catId) => (catId && catId !== 'all') 
     ? menuItems.filter((i) => i.category === catId || i.categoryId === catId) 
     : menuItems;
 
   const onSelectCategory = (catId) => {
+    // When category is selected via button, setSelectedCategory will trigger useEffect to scroll
     setSelectedCategory(catId);
-    const i = catId ? pages.findIndex((p) => p.id === catId) : 0;
-    if (scrollRef.current) scrollRef.current.scrollTo({ x: width * (i < 0 ? 0 : i), animated: true });
   };
 
+  // Handle swipe gesture - update selected category when user swipes between pages
   const onMomentumEnd = (e) => {
     const x = e.nativeEvent.contentOffset.x;
     const i = Math.round(x / width);
     const page = pages[i];
-    if (page) setSelectedCategory(page.id === 'all' ? null : page.id);
+    if (page) {
+      isSwipingRef.current = true; // Mark that this change came from swipe
+      setSelectedCategory(page.id === null || page.id === undefined ? null : page.id);
+    }
   };
 
   const filteredBySearch = useMemo(() => {
@@ -137,14 +192,9 @@ const MenuScreen = () => {
     return menuItems.filter((m) => m.name?.toLowerCase().includes(q) || m.description?.toLowerCase().includes(q));
   }, [menuItems, search]);
 
-  if (itemsLoading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
-        <ActivityIndicator size="small" color={theme.colors.primary} />
-        <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading menu...</Text>
-      </View>
-    );
-  }
+  // Show UI immediately - menu will populate when data arrives
+  // This makes the screen appear instantly instead of showing a loading screen
+  // The FlatList will handle empty state gracefully
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -164,7 +214,10 @@ const MenuScreen = () => {
         }
       ]}>
         <AnimatedButton
-          onPress={handleLogout}
+          onPress={goToOrderMode}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          accessibilityHint="Return to dine-in or take-out selection"
           style={{
             width: 44,
             height: 44,
@@ -198,7 +251,7 @@ const MenuScreen = () => {
               }}
         >
           <Icon
-            name="arrow-back"
+        name="arrow-back"
             library="ionicons"
             size={22}
             color={theme.colors.error}
@@ -245,6 +298,8 @@ const MenuScreen = () => {
                     textAlignVertical: 'center',
                     paddingVertical: 0,
                     includeFontPadding: false,
+                    // Reserve space equivalent to the cancel button width + margin.
+                    paddingRight: 48,
                   }
                 ]}
                 textAlignVertical="center"
@@ -258,6 +313,14 @@ const MenuScreen = () => {
                     borderRadius: borderRadius.round,
                     width: 32,
                     height: 32,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    // Position absolutely so native text input doesn't overlap on Android
+                    position: 'absolute',
+                    right: spacing.md - 4,
+                    zIndex: 10,
+                    // Android needs elevation to stack above the TextInput, iOS uses zIndex
+                    ...Platform.select({ android: { elevation: 6 }, ios: { zIndex: 10 } }),
                   }
                 ]}
               >
@@ -267,6 +330,8 @@ const MenuScreen = () => {
                   size={20}
                   color={theme.colors.error}
                   responsive={true}
+                  hitArea={false}
+                  style={{ margin: 0 }}
                 />
               </AnimatedButton>
             </View>
@@ -393,47 +458,79 @@ const MenuScreen = () => {
         { 
           backgroundColor: theme.colors.surface,
           paddingHorizontal: spacing.md,
-          paddingVertical: spacing.md,
+          paddingVertical: spacing.xs + 2,
         }
       ]}>
-        <View style={[styles.greetingContent, { gap: spacing.md }]}>
+        <View style={[styles.greetingContent, { gap: spacing.sm }]}>
           <Text style={[
             styles.greetingText, 
             { 
               color: theme.colors.text,
-              ...typography.h3,
+              fontSize: 16,
+              fontWeight: '600',
               flex: 1,
             }
           ]}>
             What would you like to order?
           </Text>
-          <View style={[styles.greetingIcons, { gap: spacing.sm }]}>
-            <Icon name="star" library="ionicons" size={20} color={theme.colors.primary} responsive={true} />
-            <Icon name="restaurant" library="ionicons" size={20} color={theme.colors.info || '#3B82F6'} responsive={true} />
-            <Icon name="sparkles" library="ionicons" size={20} color={theme.colors.secondary || '#7C3AED'} responsive={true} />
+          <View style={[styles.greetingIcons, { gap: spacing.xs }]}>
+            <Icon name="star" library="ionicons" size={16} color={PALETTE.yellow} responsive={true} />
+            <Icon name="restaurant" library="ionicons" size={16} color={PALETTE.orange} responsive={true} />
+            <Icon name="sparkles" library="ionicons" size={16} color={PALETTE.red} responsive={true} />
           </View>
         </View>
       </View>
 
       <CategoryFilter
-        categories={pages.filter((p) => p.id !== 'all')}
+        categories={categories}
         selectedCategory={selectedCategory}
         onSelectCategory={(id) => onSelectCategory(id)}
       />
 
+      {/* Horizontal ScrollView for swipeable category pages */}
       <ScrollView
-        ref={scrollRef}
+        ref={categoryScrollRef}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={onMomentumEnd}
-        contentContainerStyle={{}}
+        scrollEventThrottle={16}
+        style={{ flex: 1 }}
+        bounces={false}
+        decelerationRate="fast"
       >
-        {pages.map((p) => {
-          const itemsInPage = filterByCategory(p.id === 'all' ? null : p.id);
-          const items = filteredBySearch.filter((m) => itemsInPage.find((x) => x.id === m.id));
+        {pages.map((page, pageIdx) => {
+          const itemsInPage = filterByCategory(page.id);
+          const filtered = filteredBySearch.filter((m) => itemsInPage.find((x) => x.id === m.id));
+          
+          // Dedupe items for rendering by ID and by normalized name+price to catch duplicates with different ids
+          const itemsMap = new Map();
+          const itemsNamePriceMap = new Map();
+          filtered.forEach((it) => {
+            const idKey = it.id || `${it.name}-${it.price}`;
+            if (!itemsMap.has(idKey)) {
+              itemsMap.set(idKey, it);
+            }
+            const normalizedName = (it.name || '').replace(/\s*\((Small|Large)\)\s*/i, '').trim().toLowerCase();
+            const namePriceKey = `${normalizedName}|${String(it.price || '')}`;
+            if (!itemsNamePriceMap.has(namePriceKey)) {
+              itemsNamePriceMap.set(namePriceKey, it);
+            }
+          });
+          // Prefer explicit unique IDs; but if duplicates exist with different IDs, use name+price result
+          const items = Array.from(itemsMap.values());
+          if (items.length !== itemsNamePriceMap.size) {
+            // If size differs, rebuild from namePrice map to ensure only one per product display
+            const dedupedByNamePrice = Array.from(itemsNamePriceMap.values());
+            if (dedupedByNamePrice.length < items.length) {
+              console.warn(`MenuScreen: deduped ${items.length - dedupedByNamePrice.length} duplicates using name+price`);
+              items.length = 0;
+              dedupedByNamePrice.forEach(i => items.push(i));
+            }
+          }
+
           return (
-            <View key={p.id} style={{ width, flex: 1 }}>
+            <View key={page.id || 'all'} style={{ width }}>
               {items.length === 0 ? (
                 <View style={[styles.empty, { padding: spacing.xxl }]}>
                   <Icon 
@@ -450,7 +547,7 @@ const MenuScreen = () => {
                       marginTop: spacing.md,
                     }
                   ]}>
-                    No items in {p.name}
+                    No items found
                   </Text>
                   <Text style={[
                     styles.emptySubtext,
@@ -460,15 +557,16 @@ const MenuScreen = () => {
                       marginTop: spacing.sm,
                     }
                   ]}>
-                    Check back later for new items
+                    {search ? 'Try a different search' : 'Check back later for new items'}
                   </Text>
                 </View>
               ) : (
                 <FlatList
+                  key={numColumns}
                   data={items}
-                  keyExtractor={(item) => item.id}
+                  keyExtractor={(item, index) => item?.id ? String(item.id) : `${(item?.name || 'item')}-${index}`}
                   renderItem={({ item }) => <MenuItemCard item={item} />}
-                  numColumns={2}
+                  numColumns={numColumns}
                   contentContainerStyle={[styles.listContent, { padding: spacing.md, paddingBottom: spacing.xl }]}
                   columnWrapperStyle={styles.row}
                   showsVerticalScrollIndicator={false}
@@ -477,11 +575,7 @@ const MenuScreen = () => {
                   updateCellsBatchingPeriod={50}
                   initialNumToRender={10}
                   windowSize={10}
-                  getItemLayout={(data, index) => ({
-                    length: 200, // Approximate item height
-                    offset: 200 * Math.floor(index / 2),
-                    index,
-                  })}
+                  nestedScrollEnabled={true}
                 />
               )}
             </View>
@@ -489,17 +583,12 @@ const MenuScreen = () => {
         })}
       </ScrollView>
 
-      {/* Logout Confirmation Modal */}
-      <ConfirmationModal
-        visible={showLogoutModal}
-        onClose={() => setShowLogoutModal(false)}
-        onConfirm={confirmLogout}
-        title="Exit"
-        message="Are you sure you want to go back to sign in?"
-        confirmText="Yes, Exit"
-        cancelText="Cancel"
-        type="warning"
-        icon="log-out-outline"
+      <StaffUnlockModal
+        visible={staffModalVisible}
+        onCancel={() => setStaffModalVisible(false)}
+        onSuccess={handleStaffUnlockSuccess}
+        title="Staff Access Required"
+        message="Enter a staff password to leave the customer ordering flow."
       />
     </View>
   );
@@ -553,7 +642,6 @@ const styles = StyleSheet.create({
   searchCancel: {
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8
   },
   cartButton: {
     justifyContent: 'center',

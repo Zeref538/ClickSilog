@@ -1,14 +1,9 @@
 import React, { useEffect, useRef, useState, forwardRef } from 'react';
-import { View, Platform, UIManager } from 'react-native';
+import { View, Platform } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SmartKeyboardAvoidingView from './SmartKeyboardAvoidingView';
 import { useKeyboardAvoidance } from '../../contexts/KeyboardAvoidanceContext';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 /**
  * Higher-order component that automatically wraps screens with keyboard avoidance

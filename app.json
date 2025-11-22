@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "ClickSiLogApp",
+    "name": "Click Silog",
     "slug": "clicksilogapp",
     "scheme": "clicksilogapp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "sdkVersion": "54.0.0",
+    "orientation": "default",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/icon.svg",
+    "icon": "./assets/icon.png",
     "splash": {
-      "image": "./assets/icon.svg",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#FFD54F"
     },
@@ -22,17 +23,18 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.clicksilog.app",
       "infoPlist": {
+        "CFBundleDisplayName": "Click Silog",
+        "CFBundleName": "Click Silog",
         "NSCameraUsageDescription": "This app needs access to your camera to take photos for menu items.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload menu item images."
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.svg",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.clicksilog.app",
-      "versionCode": 1,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

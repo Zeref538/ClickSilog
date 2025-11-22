@@ -674,7 +674,7 @@ const CashierPaymentNotification = () => {
             ) : (
               <FlatList
                 data={displayOrders}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => item?.id ? String(item.id) : `${(item?.orderId || item?.name || 'order')}-${index}`}
                 renderItem={renderOrderItem}
                 contentContainerStyle={{ padding: spacing.md, paddingBottom: spacing.xxl }}
                 showsVerticalScrollIndicator={false}

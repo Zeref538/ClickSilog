@@ -1,9 +1,8 @@
 import { Dimensions, PixelRatio } from 'react-native';
 import { moderateScale, moderateVerticalScale } from 'react-native-size-matters';
 
-// Get dynamic screen dimensions
+// Get dynamic screen dimensions - refreshed on every call to support orientation changes
 const getWindowDimensions = () => Dimensions.get('window');
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = getWindowDimensions();
 
 // Base dimensions (iPhone 12 - 390x844) - Updated for modern smartphones
 const BASE_WIDTH = 390;
@@ -11,11 +10,12 @@ const BASE_HEIGHT = 844;
 
 /**
  * Global responsive scaling helper
- * scale(size) = size * (SCREEN_WIDTH / 390)
+ * scale(size) = size * (currentScreenWidth / 390)
  * @param {number} size - Base size in pixels
  * @returns {number} Responsive size
  */
 export const scale = (size) => {
+  const { width: SCREEN_WIDTH } = getWindowDimensions();
   const scaleFactor = SCREEN_WIDTH / BASE_WIDTH;
   return Math.round(PixelRatio.roundToNearestPixel(size * scaleFactor));
 };
@@ -33,6 +33,7 @@ export const wp = (size) => scale(size);
  * @returns {number} Responsive size
  */
 export const hp = (size) => {
+  const { height: SCREEN_HEIGHT } = getWindowDimensions();
   const scaleFactor = SCREEN_HEIGHT / BASE_HEIGHT;
   return Math.round(PixelRatio.roundToNearestPixel(size * scaleFactor));
 };
@@ -74,8 +75,9 @@ export const getScreenDimensions = () => {
  * @returns {number} Responsive spacing
  */
 export const getResponsiveSpacing = (baseSpacing) => {
-  const scale = Math.min(SCREEN_WIDTH / BASE_WIDTH, 1.2); // Cap at 1.2x
-  return baseSpacing * scale;
+  const { width: SCREEN_WIDTH } = getWindowDimensions();
+  const scaleValue = Math.min(SCREEN_WIDTH / BASE_WIDTH, 1.2); // Cap at 1.2x
+  return baseSpacing * scaleValue;
 };
 
 /**
@@ -84,6 +86,7 @@ export const getResponsiveSpacing = (baseSpacing) => {
  * @returns {number} Width in pixels
  */
 export const widthPercentage = (percentage) => {
+  const { width: SCREEN_WIDTH } = getWindowDimensions();
   return (SCREEN_WIDTH * percentage) / 100;
 };
 
@@ -93,6 +96,7 @@ export const widthPercentage = (percentage) => {
  * @returns {number} Height in pixels
  */
 export const heightPercentage = (percentage) => {
+  const { height: SCREEN_HEIGHT } = getWindowDimensions();
   return (SCREEN_HEIGHT * percentage) / 100;
 };
 
@@ -175,7 +179,12 @@ export default {
   getResponsiveLineHeight,
   getMinIconHitArea,
   getIconWithHitArea,
-  SCREEN_WIDTH,
-  SCREEN_HEIGHT,
+  // Dynamic getters for current screen dimensions
+  get SCREEN_WIDTH() {
+    return getWindowDimensions().width;
+  },
+  get SCREEN_HEIGHT() {
+    return getWindowDimensions().height;
+  },
 };
 

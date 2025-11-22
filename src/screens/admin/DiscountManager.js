@@ -33,10 +33,20 @@ const DiscountManager = ({ navigation }) => {
   const [editingItem, setEditingItem] = useState(null);
 
   useEffect(() => {
+    // Show UI immediately with empty discounts (non-blocking)
+    setDiscounts([]);
+
+    // Subscribe to discounts (non-blocking - data will arrive asynchronously)
     const unsub = firestoreService.subscribeCollection('discounts', { 
       conditions: [], 
       order: ['createdAt', 'desc'], 
-      next: setDiscounts 
+      next: (discountsList) => {
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          setDiscounts(discountsList);
+        });
+      }
     });
     return () => unsub && unsub();
   }, []);
@@ -240,6 +250,8 @@ const DiscountManager = ({ navigation }) => {
                   borderRadius: borderRadius.round,
                   width: 44,
                   height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
                   borderWidth: 1.5,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -252,6 +264,9 @@ const DiscountManager = ({ navigation }) => {
                 library="ionicons"
                 size={22}
                 color={theme.colors.text}
+                responsive={true}
+                hitArea={false}
+                style={{ margin: 0 }}
               />
             </AnimatedButton>
             <Icon

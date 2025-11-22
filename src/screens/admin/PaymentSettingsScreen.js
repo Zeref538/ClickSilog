@@ -104,6 +104,8 @@ const PaymentSettingsScreen = () => {
                   borderRadius: borderRadius.round,
                   width: 44,
                   height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
                   borderWidth: 1.5,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -116,6 +118,9 @@ const PaymentSettingsScreen = () => {
                 library="ionicons"
                 size={22}
                 color={theme.colors.text}
+                responsive={true}
+                hitArea={false}
+                style={{ margin: 0 }}
               />
             </AnimatedButton>
             <Icon
@@ -289,7 +294,7 @@ const PaymentSettingsScreen = () => {
                     borderRadius: borderRadius.md,
                     borderWidth: 1.5,
                     padding: spacing.sm,
-                    paddingRight: 50,
+                    paddingRight: 48, // Icon (20) + padding (xs*2) + right margin (sm) + buffer
                     ...typography.body,
                   }
                 ]}
@@ -309,7 +314,12 @@ const PaymentSettingsScreen = () => {
                   bottom: 0,
                   justifyContent: 'center',
                   alignItems: 'center',
-                  padding: spacing.xs,
+                  minWidth: 40,
+                  width: 40,
+                  paddingHorizontal: spacing.xs,
+                  paddingVertical: spacing.xs,
+                  zIndex: 10,
+                  elevation: 6, // Android needs elevation to stack above TextInput
                 }}
               >
                 <Icon
@@ -317,6 +327,9 @@ const PaymentSettingsScreen = () => {
                   library="ionicons"
                   size={20}
                   color={theme.colors.textSecondary}
+                  responsive={true}
+                  hitArea={false}
+                  style={{ margin: 0 }}
                 />
               </AnimatedButton>
             </View>
@@ -344,7 +357,7 @@ const PaymentSettingsScreen = () => {
                     borderRadius: borderRadius.md,
                     borderWidth: 1.5,
                     padding: spacing.sm,
-                    paddingRight: 50,
+                    paddingRight: 48, // Icon (20) + padding (xs*2) + right margin (sm) + buffer
                     ...typography.body,
                   }
                 ]}
@@ -364,7 +377,12 @@ const PaymentSettingsScreen = () => {
                   bottom: 0,
                   justifyContent: 'center',
                   alignItems: 'center',
-                  padding: spacing.xs,
+                  minWidth: 40,
+                  width: 40,
+                  paddingHorizontal: spacing.xs,
+                  paddingVertical: spacing.xs,
+                  zIndex: 10,
+                  elevation: 6, // Android needs elevation to stack above TextInput
                 }}
               >
                 <Icon
@@ -372,6 +390,9 @@ const PaymentSettingsScreen = () => {
                   library="ionicons"
                   size={20}
                   color={theme.colors.textSecondary}
+                  responsive={true}
+                  hitArea={false}
+                  style={{ margin: 0 }}
                 />
               </AnimatedButton>
             </View>

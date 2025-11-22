@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useMemo, forwardRef } from 'react';
-import { View, KeyboardAvoidingView, Platform, Keyboard, Animated, LayoutAnimation, UIManager, Easing } from 'react-native';
+import { View, KeyboardAvoidingView, Platform, Keyboard, Animated, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useKeyboardFocus } from '../../contexts/KeyboardFocusContext';
@@ -10,11 +10,6 @@ import {
   interpolateHeaderOpacity,
   createAnimatedValue,
 } from '../../utils/animations';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 /**
  * Recursively finds all TextInput components in a React element tree

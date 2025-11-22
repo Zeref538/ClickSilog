@@ -1,5 +1,5 @@
 // Modern, elegant, professional design system
-// Refined yellow accent with neutral palette
+// Warm silog-themed color palette v2
 
 export const fonts = {
   regular: 'Poppins_400Regular',
@@ -12,16 +12,16 @@ export const fonts = {
 export const lightTheme = {
   mode: 'light',
   colors: {
-    // Primary: Refined, sophisticated yellow (#FFD54F)
-    primary: '#FFD54F', // Soft, elegant yellow
-    primaryLight: '#FFECB3', // Light yellow for containers
-    primaryDark: '#F9A825', // Deeper yellow for emphasis
+    // Primary: Warm silog-themed yellow (#F9CB43)
+    primary: '#F9CB43', // Warm golden yellow
+    primaryLight: '#FBA518', // Orange accent
+    primaryDark: '#E52020', // Red accent for emphasis
     primaryContainer: '#FFF8E1', // Very light yellow background
     
-    // Secondary: Complementary colors
-    secondary: '#7C3AED', // Purple
-    secondaryLight: '#A78BFA',
-    secondaryDark: '#5B21B6',
+    // Secondary: Warm earthy tones
+    secondary: '#A89C29', // Olive/mustard green
+    secondaryLight: '#F9CB43',
+    secondaryDark: '#E52020',
     
     // Background & Surface - Clean, minimal
     background: '#FAFAFA', // Off-white background
@@ -60,8 +60,8 @@ export const lightTheme = {
     elevation3: 'rgba(0, 0, 0, 0.08)',
     
     // Accent
-    accent: '#3B82F6',
-    accentLight: '#93C5FD',
+    accent: '#FBA518',
+    accentLight: '#F9CB43',
   },
   spacing: {
     xs: 4,
@@ -96,16 +96,16 @@ export const lightTheme = {
 export const darkTheme = {
   mode: 'dark',
   colors: {
-    // Primary: Warm yellow for dark mode (not oversaturated)
-    primary: '#FFD54F', // Warm, elegant yellow
-    primaryLight: '#FFECB3', // Light yellow for containers
-    primaryDark: '#F9A825', // Deeper yellow
+    // Primary: Warm silog-themed yellow for dark mode
+    primary: '#F9CB43', // Warm golden yellow
+    primaryLight: '#FBA518', // Orange accent
+    primaryDark: '#E52020', // Red accent
     primaryContainer: '#4E342E', // Deep brown container
     
     // Secondary
-    secondary: '#A78BFA', // Light purple
-    secondaryLight: '#C4B5FD',
-    secondaryDark: '#7C3AED',
+    secondary: '#A89C29', // Olive/mustard green
+    secondaryLight: '#F9CB43',
+    secondaryDark: '#E52020',
     
     // Background & Surface - Deep charcoal (no pure black)
     background: '#1E1E1E', // Deep charcoal background
@@ -144,8 +144,8 @@ export const darkTheme = {
     elevation3: 'rgba(0, 0, 0, 0.25)',
     
     // Accent
-    accent: '#60A5FA',
-    accentLight: '#3B82F6',
+    accent: '#FBA518',
+    accentLight: '#F9CB43',
   },
   spacing: {
     xs: 4,

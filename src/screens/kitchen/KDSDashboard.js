@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useContext } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, BackHandler, Vibration } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, useWindowDimensions, BackHandler, Vibration, TouchableWithoutFeedback } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { orderService } from '../../services/orderService';
@@ -11,6 +11,10 @@ import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import NotificationModal from '../../components/ui/NotificationModal';
+
+// Production-safe logging
+const log = (...args) => { if (__DEV__) console.log(...args); };
+const logError = (...args) => { console.error(...args); }; // Always log errors
 
 const PAGES = [
   { id: 'pending', label: 'Pending' },
@@ -139,7 +143,7 @@ const KDSDashboard = () => {
   const [expandedItems, setExpandedItems] = useState({}); // Track expanded state for add-ons and notes
   const orderSubscriptionRef = useRef(null);
   const scrollRef = useRef(null);
-  const { width } = Dimensions.get('window');
+  const { width } = useWindowDimensions();
 
   const handleLogout = () => {
     setShowLogoutModal(true);
@@ -154,7 +158,7 @@ const KDSDashboard = () => {
               rootNav.navigate('Login');
             } catch (e) {
               // AppNavigator will handle routing after logout
-              console.log('Navigation handled by AppNavigator after logout');
+              log('Navigation handled by AppNavigator after logout');
             }
   };
 
@@ -169,7 +173,7 @@ const KDSDashboard = () => {
       Vibration.vibrate(200); // 200ms vibration
       
       // Log for debugging
-      console.log('🔔 Bell sound triggered for new order');
+      log('🔔 Bell sound triggered for new order');
       
       // Note: For actual bell sound, install expo-av:
       // npm install expo-av
@@ -178,7 +182,7 @@ const KDSDashboard = () => {
       // await sound.playAsync();
     } catch (error) {
       // Sound library not available - just log
-      console.log('🔔 New order notification (sound not available)');
+      log('🔔 New order notification (sound not available)');
     }
   };
 
@@ -194,36 +198,44 @@ const KDSDashboard = () => {
     setNewOrdersCount(0);
     lastOrderIdsRef.current = new Set();
 
-    // Subscribe to orders
+    // Show UI immediately with empty orders (non-blocking)
+    // This allows the screen to render while data loads
+    setOrders([]);
+
+    // Subscribe to orders (non-blocking - data will arrive asynchronously)
     const unsub = orderService.subscribeOrders({ 
       status: undefined, 
       next: (newOrders) => {
-        const currentOrderIds = new Set(newOrders.map(o => o.id));
-        
-        // Check for new pending orders (only paid orders)
-        const newPendingOrders = newOrders.filter(o => 
-          o.status === 'pending' && 
-          (o.paymentStatus === 'paid' || (o.paymentMethod === 'cash' && !o.paymentStatus)) &&
-          o.status !== 'pending_payment' &&
-          !lastOrderIdsRef.current.has(o.id)
-        );
-        
-        if (newPendingOrders.length > 0) {
-          // New order detected!
-          setNewOrdersCount(newPendingOrders.length);
-          playBellSound();
-          setShowNewOrderNotification({
-            visible: true,
-            title: 'New Order!',
-            message: `You have ${newPendingOrders.length} new order${newPendingOrders.length > 1 ? 's' : ''} to prepare.`,
-          });
-        }
-        
-        lastOrderIdsRef.current = currentOrderIds;
-        setOrders(newOrders);
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          const currentOrderIds = new Set(newOrders.map(o => o.id));
+          
+          // Check for new pending orders (only paid orders)
+          const newPendingOrders = newOrders.filter(o => 
+            o.status === 'pending' && 
+            (o.paymentStatus === 'paid' || (o.paymentMethod === 'cash' && !o.paymentStatus)) &&
+            o.status !== 'pending_payment' &&
+            !lastOrderIdsRef.current.has(o.id)
+          );
+          
+          if (newPendingOrders.length > 0) {
+            // New order detected!
+            setNewOrdersCount(newPendingOrders.length);
+            playBellSound();
+            setShowNewOrderNotification({
+              visible: true,
+              title: 'New Order!',
+              message: `You have ${newPendingOrders.length} new order${newPendingOrders.length > 1 ? 's' : ''} to prepare.`,
+            });
+          }
+          
+          lastOrderIdsRef.current = currentOrderIds;
+          setOrders(newOrders);
+        });
       },
       error: (err) => {
-        console.error('Order subscription error:', err);
+        logError('Order subscription error:', err);
       }
     });
 
@@ -231,10 +243,20 @@ const KDSDashboard = () => {
     return unsub;
   };
 
-  // Initialize on mount
+  // Initialize on mount (non-blocking)
   useEffect(() => {
-    const unsub = initializeOrderListener();
-    return () => unsub && unsub();
+    // Defer subscription to next frame to allow UI to render first
+    requestAnimationFrame(() => {
+      initializeOrderListener();
+    });
+    
+    return () => {
+      // Cleanup subscription on unmount
+      if (orderSubscriptionRef.current) {
+        orderSubscriptionRef.current();
+        orderSubscriptionRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -276,12 +298,41 @@ const KDSDashboard = () => {
     };
   }, [orders]);
 
+  // Helper to get timestamp from order (supports string, number, or Firebase Timestamp)
+  const getOrderTs = (order) => {
+    if (!order) return null;
+    const ts = order.timestamp || order.createdAt || order.created_at;
+    if (!ts) return null;
+    // Firebase server timestamp object
+    if (typeof ts === 'object' && ts.seconds) return ts.seconds * 1000;
+    // ISO string
+    if (typeof ts === 'string') return new Date(ts).getTime();
+    if (typeof ts === 'number') return ts; // already millis or seconds? assume millis
+    return null;
+  };
+
+
   const startOrReady = async (order) => {
     // If pending, change to preparing (stays in pending tab)
     // If preparing, change to completed (moves to all tab and labeled as complete)
     const next = order.status === 'pending' ? 'preparing' : 'completed';
-    await orderService.updateStatus(order.id, next);
-    // If marking as completed, switch to "All" tab
+    const originalStatus = order.status;
+    
+    // Optimistic update: Update UI immediately
+    setOrders(prevOrders => 
+      prevOrders.map(o => 
+        o.id === order.id 
+          ? { 
+              ...o, 
+              status: next,
+              ...(next === 'preparing' ? { preparationStartTime: new Date().toISOString() } : {}),
+              ...(next === 'completed' ? { completedTime: new Date().toISOString() } : {})
+            }
+          : o
+      )
+    );
+    
+    // If marking as completed, switch to "All" tab immediately
     if (next === 'completed') {
       setPageIndex(2); // Switch to "All" tab (index 2)
       // Scroll to "All" tab
@@ -289,11 +340,41 @@ const KDSDashboard = () => {
         scrollRef.current.scrollTo({ x: width * 2, animated: true });
       }
     }
+    
+    // Update Firestore in background (non-blocking)
+    orderService.updateStatus(order.id, next).catch((error) => {
+      logError('Failed to update order status:', error);
+      // Revert optimistic update on error
+      setOrders(prevOrders => 
+        prevOrders.map(o => 
+          o.id === order.id ? { ...o, status: originalStatus } : o
+        )
+      );
+    });
   };
 
   const completeOrder = async (order) => {
-    // Update order status to completed (updateStatus automatically sets completedTime)
-    await orderService.updateStatus(order.id, 'completed');
+    const originalStatus = order.status;
+    
+    // Optimistic update: Update UI immediately
+    setOrders(prevOrders => 
+      prevOrders.map(o => 
+        o.id === order.id 
+          ? { ...o, status: 'completed', completedTime: new Date().toISOString() }
+          : o
+      )
+    );
+    
+    // Update Firestore in background (non-blocking)
+    orderService.updateStatus(order.id, 'completed').catch((error) => {
+      logError('Failed to complete order:', error);
+      // Revert optimistic update on error
+      setOrders(prevOrders => 
+        prevOrders.map(o => 
+          o.id === order.id ? { ...o, status: originalStatus } : o
+        )
+      );
+    });
   };
 
   const cancelOrder = async (order) => {
@@ -303,13 +384,38 @@ const KDSDashboard = () => {
   const confirmCancelOrder = async () => {
     if (cancelOrderModal.order) {
       const order = cancelOrderModal.order;
-      // Update order with cancelled status and cancellation timestamp
-      await orderService.updateOrder(order.id, {
+      const originalStatus = order.status;
+      
+      // Optimistic update: Update UI immediately
+      setOrders(prevOrders => 
+        prevOrders.map(o => 
+          o.id === order.id 
+            ? { 
+                ...o, 
+                status: 'cancelled',
+                cancelledAt: new Date().toISOString(),
+                cancelledBy: 'kitchen'
+              }
+            : o
+        )
+      );
+      
+      setCancelOrderModal({ visible: false, order: null });
+      
+      // Update Firestore in background (non-blocking)
+      orderService.updateOrder(order.id, {
         status: 'cancelled',
         cancelledAt: new Date().toISOString(),
-        cancelledBy: 'kitchen' // Track who cancelled
+        cancelledBy: 'kitchen'
+      }).catch((error) => {
+        logError('Failed to cancel order:', error);
+        // Revert optimistic update on error
+        setOrders(prevOrders => 
+          prevOrders.map(o => 
+            o.id === order.id ? { ...o, status: originalStatus } : o
+          )
+        );
       });
-      setCancelOrderModal({ visible: false, order: null });
     }
   };
 
@@ -328,37 +434,66 @@ const KDSDashboard = () => {
       }
     ]}>
       <View style={[styles.cardHeader, { marginBottom: spacing.sm }]}>
-        <View style={[
-          styles.ticketContainer, 
-          { 
-            backgroundColor: theme.colors.primaryContainer,
-            borderColor: theme.colors.primary + '40',
-            borderRadius: borderRadius.md,
-            paddingVertical: spacing.xs,
-            paddingHorizontal: spacing.sm,
-            borderWidth: 1.5,
-            flexDirection: 'row',
-            alignItems: 'center',
-          }
-        ]}>
-          <Text style={[
-            styles.ticketHash,
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+          <View style={[
+            styles.ticketContainer, 
             { 
-              color: theme.colors.primary,
-              ...typography.captionBold,
+              backgroundColor: theme.colors.primaryContainer,
+              borderColor: theme.colors.primary + '40',
+              borderRadius: borderRadius.md,
+              paddingVertical: spacing.xs,
+              paddingHorizontal: spacing.sm,
+              borderWidth: 1.5,
+              flexDirection: 'row',
+              alignItems: 'center',
             }
           ]}>
-            #
-          </Text>
-          <Text style={[
-            styles.ticket, 
-            { 
-              color: theme.colors.primary,
-              ...typography.captionBold,
+            <Text style={[
+              styles.ticketHash,
+              { 
+                color: theme.colors.primary,
+                ...typography.captionBold,
+              }
+            ]}>
+              #
+            </Text>
+            <Text style={[
+              styles.ticket, 
+              { 
+                color: theme.colors.primary,
+                ...typography.captionBold,
+              }
+            ]}>
+              {order.id || 'N/A'}
+            </Text>
+          </View>
+          {/* Order Type Badge - Always show, default to dine-in if missing */}
+          <View style={[
+            {
+              backgroundColor: (order.orderType || 'dine-in') === 'dine-in' 
+                ? (theme.colors.infoContainer || '#E0F2FE') 
+                : (theme.colors.warningContainer || '#FEF3C7'),
+              borderColor: (order.orderType || 'dine-in') === 'dine-in'
+                ? (theme.colors.info || '#0284C7') + '40'
+                : (theme.colors.warning || '#F59E0B') + '40',
+              borderRadius: borderRadius.md,
+              paddingVertical: spacing.xs,
+              paddingHorizontal: spacing.sm,
+              borderWidth: 1.5,
             }
           ]}>
-            {order.id || 'N/A'}
-          </Text>
+            <Text style={[
+              {
+                color: (order.orderType || 'dine-in') === 'dine-in'
+                  ? (theme.colors.info || '#0284C7')
+                  : (theme.colors.warning || '#F59E0B'),
+                ...typography.captionBold,
+                textTransform: 'uppercase',
+              }
+            ]}>
+              {(order.orderType || 'dine-in') === 'dine-in' ? 'Dine-In' : 'Take-Out'}
+            </Text>
+          </View>
         </View>
         <StatusBadge 
           status={order.status} 
@@ -368,6 +503,48 @@ const KDSDashboard = () => {
           typography={typography}
         />
       </View>
+      
+      {/* Customer Name (Take-Out) or Table Number (Dine-In) */}
+      {((order.orderType || 'dine-in') === 'take-out' && order.customerName) || 
+       ((order.orderType || 'dine-in') === 'dine-in' && order.tableNumber) ? (
+        <View style={[
+          {
+            backgroundColor: theme.colors.surfaceVariant,
+            borderRadius: borderRadius.md,
+            paddingVertical: spacing.xs,
+            paddingHorizontal: spacing.sm,
+            marginBottom: spacing.sm,
+            flexDirection: 'row',
+            alignItems: 'center',
+            borderWidth: 1.5,
+            borderColor: (order.orderType || 'dine-in') === 'dine-in'
+              ? (theme.colors.info || '#0284C7') + '40'
+              : (theme.colors.warning || '#F59E0B') + '40',
+          }
+        ]}>
+          <Icon
+            name={(order.orderType || 'dine-in') === 'dine-in' ? 'restaurant' : 'person'}
+            library="ionicons"
+            size={16}
+            color={(order.orderType || 'dine-in') === 'dine-in'
+              ? (theme.colors.info || '#0284C7')
+              : (theme.colors.warning || '#F59E0B')}
+            style={{ marginRight: spacing.xs }}
+          />
+          <Text style={[
+            {
+              color: (order.orderType || 'dine-in') === 'dine-in'
+                ? (theme.colors.info || '#0284C7')
+                : (theme.colors.warning || '#F59E0B'),
+              ...typography.captionBold,
+            }
+          ]}>
+            {(order.orderType || 'dine-in') === 'dine-in' 
+              ? `Table: ${order.tableNumber}` 
+              : `Customer: ${order.customerName}`}
+          </Text>
+        </View>
+      ) : null}
       
       {/* Time moved to top */}
       <View style={[
@@ -411,10 +588,24 @@ const KDSDashboard = () => {
           const isAddOnsExpanded = expandedItems[addOnsKey] || false;
           const isNotesExpanded = expandedItems[notesKey] || false;
           const addOnsText = i.addOns?.map((a) => a.name).join(', ') || '';
-          const notesText = i.specialInstructions || '';
+          // Check for special instructions in multiple possible field names
+          // Handle both camelCase and snake_case, and also check for empty strings
+          const notesText = (i.specialInstructions || i.special_instructions || i.notes || '').trim();
+          
+          // Debug logging (only in dev mode)
+          if (__DEV__ && (i.specialInstructions || i.special_instructions || i.notes)) {
+            console.log(`[KDSDashboard] Item ${i.name} special instructions:`, {
+              specialInstructions: i.specialInstructions,
+              special_instructions: i.special_instructions,
+              notes: i.notes,
+              notesText: notesText,
+              hasNotes: notesText.length > 0
+            });
+          }
+          
           // Always show expand button if there are add-ons or notes
           const shouldShowAddOnsExpand = i.addOns?.length > 0;
-          const shouldShowNotesExpand = !!i.specialInstructions;
+          const shouldShowNotesExpand = notesText.length > 0;
           
           return (
           <View key={`${order.id}-item-${i.itemId || i.name || idx}-${idx}`} style={[
@@ -522,7 +713,7 @@ const KDSDashboard = () => {
                   </View>
                 </View>
               )}
-              {!!i.specialInstructions && (
+              {notesText.length > 0 && (
                 <View style={[
                   styles.notesContainer, 
                   { 
@@ -951,6 +1142,8 @@ const KDSDashboard = () => {
     </View>
   );
 
+  const tabWidth = Math.max(84, Math.floor((width - spacing.md * 2) / Math.max(3, PAGES.length)));
+
   const onTabPress = (index) => {
     setPageIndex(index);
     if (scrollRef.current) scrollRef.current.scrollTo({ x: width * index, animated: true });
@@ -1054,15 +1247,13 @@ const KDSDashboard = () => {
           </AnimatedButton>
           <AnimatedButton
             onPress={handleLogout}
-            style={[
-              {
-                width: 44,
-                height: 44,
-                justifyContent: 'center',
-                alignItems: 'center',
-                backgroundColor: 'transparent',
-              }
-            ]}
+            style={{
+              width: 44,
+              height: 44,
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: 'transparent',
+            }}
           >
             <View
               style={{
@@ -1075,16 +1266,15 @@ const KDSDashboard = () => {
               <View
                 style={{
                   backgroundColor: theme.colors.error + '20',
-                  borderColor: theme.colors.error,
-                  borderRadius: borderRadius.round,
-                  width: 44,
-                  height: 44,
                   borderWidth: 1.5,
+                  borderColor: theme.colors.error,
+                  padding: spacing.sm,
+                  borderRadius: 999,
                   justifyContent: 'center',
                   alignItems: 'center',
                   shadowColor: theme.colors.error,
                   shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.15,
+                  shadowOpacity: 0.2,
                   shadowRadius: 4,
                   elevation: 3,
                 }}
@@ -1104,16 +1294,16 @@ const KDSDashboard = () => {
         </View>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={[
+      <View
+        style={[
           styles.tabs,
           {
             paddingHorizontal: spacing.md,
             paddingTop: spacing.lg, // Increased top padding for more spacing from header
             paddingBottom: spacing.sm,
             gap: spacing.sm,
+            flexDirection: 'row',
+            justifyContent: 'center'
           }
         ]}
       >
@@ -1135,11 +1325,19 @@ const KDSDashboard = () => {
                 paddingHorizontal: spacing.md,
                 borderWidth: 1.5,
                 minHeight: 40,
+                minWidth: 110,
+                paddingHorizontal: spacing.sm,
+                marginRight: i < PAGES.length - 1 ? spacing.sm : 0,
               }
             ]} 
-            onPress={() => onTabPress(i)}
+            onPress={() => {
+              onTabPress(i);
+            }}
           >
-            <Text style={[
+            <Text
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              style={[
               styles.tabText, 
               pageIndex === i && styles.tabTextActive, 
               { 
@@ -1153,7 +1351,8 @@ const KDSDashboard = () => {
             </Text>
           </AnimatedButton>
         ))}
-      </ScrollView>
+      </View>
+
 
       <ScrollView
         ref={scrollRef}
@@ -1163,7 +1362,7 @@ const KDSDashboard = () => {
         onMomentumScrollEnd={onMomentumEnd}
       >
         {PAGES.map((p) => {
-          const ordersForPage = dataByStatus[p.id] || [];
+          let ordersForPage = dataByStatus[p.id] || [];
           const hasOrders = ordersForPage.length > 0;
           return (
             <View key={p.id} style={{ width, paddingHorizontal: spacing.md }}>
@@ -1294,15 +1493,20 @@ const styles = StyleSheet.create({
   },
   tab: { 
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+    minWidth: 110,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   tabText: { 
     fontWeight: '700', 
     fontSize: 14, 
     letterSpacing: 0.3 
+    ,
+    textAlign: 'center'
   },
   tabTextActive: { 
     fontWeight: '800'
@@ -1450,7 +1654,7 @@ const styles = StyleSheet.create({
   },
   emptySubtext: {
     textAlign: 'center'
-  }
+  },
 });
 
 export default KDSDashboard;

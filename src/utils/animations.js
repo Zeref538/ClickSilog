@@ -1,9 +1,4 @@
-import { LayoutAnimation, UIManager, Platform, Easing, Animated, InteractionManager } from 'react-native';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+import { LayoutAnimation, Platform, Easing, Animated, InteractionManager } from 'react-native';
 
 // Check if user has reduced motion enabled (accessibility)
 let reduceMotionEnabled = false;

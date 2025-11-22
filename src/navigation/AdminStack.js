@@ -8,6 +8,7 @@ import SalesReportScreen from '../screens/admin/SalesReportScreen';
 import UserManager from '../screens/admin/UserManager';
 import SeedDatabaseScreen from '../screens/admin/SeedDatabaseScreen';
 import PaymentSettingsScreen from '../screens/admin/PaymentSettingsScreen';
+import PinLockSettingsScreen from '../screens/admin/PinLockSettingsScreen';
 
 const Stack = createStackNavigator();
 
@@ -39,6 +40,7 @@ const AdminStack = () => (
            <Stack.Screen name="SalesReport" component={SalesReportScreen} options={{ headerShown: false }} />
            <Stack.Screen name="SeedDatabase" component={SeedDatabaseScreen} options={{ headerShown: false }} />
            <Stack.Screen name="PaymentSettings" component={PaymentSettingsScreen} options={{ headerShown: false }} />
+           <Stack.Screen name="PinLockSettings" component={PinLockSettingsScreen} options={{ headerShown: false }} />
   </Stack.Navigator>
 );
 

@@ -9,18 +9,24 @@ import { ThemeProvider } from './src/contexts/ThemeContext';
 import { KeyboardAvoidanceProvider } from './src/contexts/KeyboardAvoidanceContext';
 import { KeyboardFocusProvider } from './src/contexts/KeyboardFocusContext';
 import { AnimationProvider } from './src/contexts/AnimationContext';
+import { PinLockProvider } from './src/contexts/PinLockContext';
 import ErrorBoundary from './src/components/ui/ErrorBoundary';
 import AppNavigator from './src/navigation/AppNavigator';
 import AlertProvider from './src/components/ui/AlertProvider';
+import PinLockModal from './src/components/ui/PinLockModal';
 import errorLogger from './src/utils/errorLogger';
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
   });
+
+  if (fontError) {
+    console.error('Font loading error:', fontError);
+  }
 
   if (!fontsLoaded) {
     return (
@@ -47,9 +53,12 @@ export default function App() {
                 <KeyboardFocusProvider>
                   <AuthProvider>
                     <CartProvider>
-                      <AlertProvider>
-                        <AppNavigator />
-                      </AlertProvider>
+                      <PinLockProvider>
+                        <AlertProvider>
+                          <AppNavigator />
+                          <PinLockModal />
+                        </AlertProvider>
+                      </PinLockProvider>
                     </CartProvider>
                   </AuthProvider>
                 </KeyboardFocusProvider>

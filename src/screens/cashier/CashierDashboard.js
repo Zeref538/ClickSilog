@@ -15,10 +15,19 @@ const CashierDashboard = () => {
   const [allOrders, setAllOrders] = useState([]);
 
   useEffect(() => {
-    // Subscribe to all orders (no status filter) to get both pending_payment and ready orders
+    // Show UI immediately with empty orders (non-blocking)
+    setAllOrders([]);
+
+    // Subscribe to orders (non-blocking - data will arrive asynchronously)
     const unsub = orderService.subscribeOrders({ 
       status: undefined, 
-      next: setAllOrders 
+      next: (newOrders) => {
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          setAllOrders(newOrders);
+        });
+      }
     });
     return () => unsub && unsub();
   }, []);
@@ -123,6 +132,37 @@ const CashierDashboard = () => {
           ]}>
             Table {item.tableNumber}
           </Text>
+        )}
+        {/* Order Type Badge */}
+        {item.orderType && (
+          <View style={[
+            {
+              backgroundColor: item.orderType === 'dine-in' 
+                ? (theme.colors.infoContainer || '#E0F2FE') 
+                : (theme.colors.warningContainer || '#FEF3C7'),
+              borderColor: item.orderType === 'dine-in'
+                ? (theme.colors.info || '#0284C7') + '40'
+                : (theme.colors.warning || '#F59E0B') + '40',
+              borderRadius: borderRadius.sm,
+              paddingVertical: spacing.xs / 2,
+              paddingHorizontal: spacing.xs,
+              borderWidth: 1,
+              marginLeft: spacing.sm,
+            }
+          ]}>
+            <Text style={[
+              {
+                color: item.orderType === 'dine-in'
+                  ? (theme.colors.info || '#0284C7')
+                  : (theme.colors.warning || '#F59E0B'),
+                fontSize: 10,
+                fontWeight: '700',
+                textTransform: 'uppercase',
+              }
+            ]}>
+              {item.orderType === 'dine-in' ? 'Dine-In' : 'Take-Out'}
+            </Text>
+          </View>
         )}
       </View>
       <Text style={[

@@ -35,14 +35,39 @@ const GCashPaymentScreen = ({ navigation, route }) => {
   }, [orderId, amount, navigation]);
 
   // Define handlers before useEffect to avoid dependency issues
-  const handlePaymentSuccess = React.useCallback(() => {
+  const handlePaymentSuccess = React.useCallback(async () => {
     clearCart();
     alertService.success('Payment Confirmed', 'Your payment has been confirmed. Your order is being prepared!');
-    // Navigate back to menu/home
-    setTimeout(() => {
-      navigation.popToTop();
-    }, 2000);
-  }, [clearCart, navigation]);
+    
+    // Fetch order data and navigate to receipt
+    if (orderId) {
+      try {
+        const order = await firestoreService.getDocument('orders', orderId);
+        if (order) {
+          // Wait a moment for the success message to be visible, then show receipt
+          setTimeout(() => {
+            navigation.navigate('Receipt', { order });
+          }, 1500);
+        } else {
+          // Fallback: navigate back to menu
+          setTimeout(() => {
+            navigation.popToTop();
+          }, 2000);
+        }
+      } catch (error) {
+        console.error('Error fetching order for receipt:', error);
+        // Fallback: navigate back to menu
+        setTimeout(() => {
+          navigation.popToTop();
+        }, 2000);
+      }
+    } else {
+      // Fallback: navigate back to menu
+      setTimeout(() => {
+        navigation.popToTop();
+      }, 2000);
+    }
+  }, [clearCart, navigation, orderId]);
 
   const handlePaymentExpired = React.useCallback(() => {
     setPaymentStatus('expired');

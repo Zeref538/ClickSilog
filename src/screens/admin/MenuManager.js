@@ -32,7 +32,21 @@ const MenuManager = ({ navigation }) => {
   const [deleteConfirm, setDeleteConfirm] = useState({ visible: false, item: null });
 
   useEffect(() => {
-    const u1 = firestoreService.subscribeCollection('menu', { conditions: [], order: ['name', 'asc'], next: setMenu });
+    // Show UI immediately with empty menu (non-blocking)
+    setMenu([]);
+
+    // Subscribe to menu (non-blocking - data will arrive asynchronously)
+    const u1 = firestoreService.subscribeCollection('menu', { 
+      conditions: [], 
+      order: ['name', 'asc'], 
+      next: (menuList) => {
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          setMenu(menuList);
+        });
+      }
+    });
     return () => { u1 && u1(); };
   }, []);
 
@@ -43,7 +57,7 @@ const MenuManager = ({ navigation }) => {
     const categoryNames = {
       'silog_meals': 'Silog Meals',
       'snacks': 'Snacks',
-      'drinks': 'Drinks & Beverages'
+      'drinks': 'Beverages'
     };
     
     menu.forEach(item => {
@@ -180,16 +194,32 @@ const MenuManager = ({ navigation }) => {
       // Upload image if it's a local URI (not already uploaded)
       if (imageUrl && imageUrl.startsWith('file://')) {
         try {
+          // Convert file URI to blob for Firebase Storage
           const response = await fetch(imageUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to read image file: ${response.status}`);
+          }
           const blob = await response.blob();
-          // Firebase Storage accepts Blob directly in React Native
-          // Pass the blob and filename separately to avoid modifying the blob
-          const fileName = `menu-${id}-${Date.now()}.jpg`;
-          const uploadResult = await storageService.uploadMenuItemImage(id, blob, fileName);
-          imageUrl = uploadResult.url;
+          
+          // Ensure blob has correct content type
+          if (!blob.type || blob.type === 'application/octet-stream') {
+            // Create new blob with image/jpeg type if missing
+            const typedBlob = new Blob([blob], { type: 'image/jpeg' });
+            const fileName = `menu-${id}-${Date.now()}.jpg`;
+            const uploadResult = await storageService.uploadMenuItemImage(id, typedBlob, fileName);
+            imageUrl = uploadResult.url;
+          } else {
+            const fileName = `menu-${id}-${Date.now()}.${blob.type.split('/')[1] || 'jpg'}`;
+            const uploadResult = await storageService.uploadMenuItemImage(id, blob, fileName);
+            imageUrl = uploadResult.url;
+          }
+          
+          if (__DEV__) {
+            console.log(`[MenuManager] Image uploaded successfully: ${imageUrl}`);
+          }
         } catch (error) {
           console.error('Error uploading image:', error);
-          alertService.warning('Warning', `Failed to upload image: ${error.message}. Saving without image.`);
+          alertService.warning('Warning', `Failed to upload image: ${error.message || 'Unknown error'}. Saving without image.`);
           imageUrl = ''; // Clear image URL on error
         }
       }
@@ -239,7 +269,8 @@ const MenuManager = ({ navigation }) => {
 
   const getCategoryName = (catId) => {
     const cat = catId || '';
-    return categories.find((c) => c.id === cat)?.name || 'Unknown';
+    const category = categories.find((c) => c.id === cat);
+    return category?.name || 'Unknown';
   };
 
   return (
@@ -265,6 +296,8 @@ const MenuManager = ({ navigation }) => {
                   borderRadius: borderRadius.round,
                   width: wp(44),
                   height: wp(44),
+                  minWidth: wp(44),
+                  minHeight: wp(44),
                   borderWidth: 1.5,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -277,6 +310,9 @@ const MenuManager = ({ navigation }) => {
                 library="ionicons"
                 size={22}
                 color={theme.colors.text}
+                responsive={true}
+                hitArea={false}
+                style={{ margin: 0 }}
               />
             </AnimatedButton>
             <Icon
@@ -430,7 +466,7 @@ const MenuManager = ({ navigation }) => {
         return (
           <FlatList
             data={filteredMenu}
-            keyExtractor={(m) => m.id}
+            keyExtractor={(m, index) => m?.id ? String(m.id) : `${(m?.name || 'menu')}-${index}`}
             ListEmptyComponent={
               <View style={[styles.empty, { padding: spacing.xxl }]}>
                 <Icon
@@ -489,7 +525,7 @@ const MenuManager = ({ navigation }) => {
                     marginRight: spacing.sm,
                   }
                 ]}>
-                  {item.name}
+                  {item.name || ''}
                 </Text>
                 <View style={[
                   styles.statusBadge,
@@ -641,7 +677,7 @@ const MenuManager = ({ navigation }) => {
                     borderWidth: 1,
                   }
                 ]}
-                onPress={() => toggleAvailable(item)}
+                onPress={() => toggle(item)}
               >
                 <Icon
                   name={item.available ? 'eye-off' : 'eye'}
@@ -855,10 +891,11 @@ const MenuManager = ({ navigation }) => {
                 borderWidth: 2,
                 padding: spacing.md,
                 marginBottom: spacing.md,
+                overflow: 'visible', // Allow button to extend outside container
               }
             ]}>
               {form.imageUrl ? (
-                <View style={styles.imagePreview}>
+                <View style={[styles.imagePreview, { overflow: 'visible' }]}>
                   <Image
                     source={{ uri: form.imageUrl }}
                     style={[
@@ -883,9 +920,15 @@ const MenuManager = ({ navigation }) => {
                         borderRadius: borderRadius.round,
                         width: wp(32),
                         height: wp(32),
+                        minWidth: wp(32),
+                        minHeight: wp(32),
                         position: 'absolute',
                         top: -8,
                         right: -8,
+                        zIndex: 10,
+                        elevation: 6, // Android needs elevation to stack above image
+                        justifyContent: 'center',
+                        alignItems: 'center',
                       }
                     ]}
                   >
@@ -894,6 +937,9 @@ const MenuManager = ({ navigation }) => {
                       library="ionicons"
                       size={18}
                       color={theme.colors.onPrimary}
+                      responsive={true}
+                      hitArea={false}
+                      style={{ margin: 0 }}
                     />
                   </AnimatedButton>
                 </View>

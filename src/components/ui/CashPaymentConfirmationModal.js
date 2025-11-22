@@ -16,7 +16,9 @@ import {
 import AnimatedButton from './AnimatedButton';
 import Icon from './Icon';
 
-const CashPaymentConfirmationModal = ({ visible, onClose, onConfirm, orderData, total }) => {
+const CashPaymentConfirmationModal = ({ visible, onClose, onConfirm, orderData, total, amount, loading }) => {
+  // Support both 'total' and 'amount' props for backward compatibility
+  const displayAmount = total || amount || 0;
   const { theme, spacing, borderRadius, typography } = useTheme();
   const [password, setPassword] = useState('');
   const [verifying, setVerifying] = useState(false);
@@ -140,7 +142,7 @@ const CashPaymentConfirmationModal = ({ visible, onClose, onConfirm, orderData, 
         await resetAttemptCounter();
         await logSecurityEvent('payment_password_success', {
           orderId: orderData?.id,
-          total,
+          total: displayAmount,
         });
         
         // Password verified - place the order
@@ -294,7 +296,7 @@ const CashPaymentConfirmationModal = ({ visible, onClose, onConfirm, orderData, 
                 ...typography.h2,
               }
             ]}>
-              ₱{total.toFixed(2)}
+              ₱{displayAmount.toFixed(2)}
             </Text>
           </View>
 

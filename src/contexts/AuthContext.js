@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Load user from storage on mount
+  // Load user and last selected role from storage on mount
   useEffect(() => {
     let isMounted = true;
     let timeoutId = null;
@@ -24,10 +24,23 @@ export const AuthProvider = ({ children }) => {
     
     const loadUser = async () => {
       try {
+        // 1) Prefer last selected role from AsyncStorage
+        const storedRole = await AsyncStorage.getItem('userRole');
+
+        // 2) Try to fetch authenticated user (may be null)
         const currentUser = await authService.getCurrentUser();
-        if (isMounted && currentUser) {
+
+        if (!isMounted) return;
+
+        if (currentUser) {
           setUser(currentUser);
-          setUserRole(currentUser.role || 'customer');
+        }
+
+        // 3) Determine role priority: storedRole > currentUser.role > leave as-is
+        if (storedRole) {
+          setUserRole(storedRole);
+        } else if (currentUser && currentUser.role) {
+          setUserRole(currentUser.role);
         }
       } catch (error) {
         console.error('Error loading user:', error);
@@ -65,8 +78,22 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (userData) => {
+    // Update state immediately for instant UI response
     setUser(userData);
-    setUserRole(userData.role || 'customer');
+    const roleFromUser = userData?.role || 'customer';
+    setUserRole(roleFromUser);
+    
+    // Persist role asynchronously without blocking
+    AsyncStorage.getItem('userRole').then((storedRole) => {
+      const roleToUse = roleFromUser || storedRole || 'customer';
+      if (roleToUse !== roleFromUser) {
+        setUserRole(roleToUse);
+      }
+      // Persist the role for next time
+      AsyncStorage.setItem('userRole', roleToUse).catch(() => {});
+    }).catch(() => {
+      // If AsyncStorage fails, just use the role from userData
+    });
   };
 
   const logout = async () => {
@@ -76,8 +103,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const setRole = async (role) => {
-    setUserRole(role);
-    await AsyncStorage.setItem('userRole', role);
+    try {
+      setUserRole(role);
+      await AsyncStorage.setItem('userRole', role);
+    } catch (e) {
+      console.warn('Failed to persist role, using in-memory value only', e);
+    }
   };
 
   return (

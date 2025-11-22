@@ -7,10 +7,27 @@ import Icon from './Icon';
 import AnimatedButton from './AnimatedButton';
 import { useCart } from '../../contexts/CartContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getLocalImage } from '../../config/menuImages';
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
-const MenuItemCard = ({ item }) => {
+// Warm color palette
+const PALETTE = {
+  red: '#E52020',
+  orange: '#FBA518',
+  yellow: '#F9CB43',
+  olive: '#A89C29',
+};
+
+  const MenuItemCard = ({ item }) => {
+  // Helper function to convert hex color to rgba with opacity
+  const hexToRgba = (hex, opacity) => {
+    const cleanHex = (hex || '').replace('#', '');
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  };
   const { theme, spacing, borderRadius, typography, themeMode } = useTheme();
   const { addToCart, calculateTotalPrice, items, removeFromCart, updateQty } = useCart();
   const [open, setOpen] = useState(false);
@@ -21,7 +38,7 @@ const MenuItemCard = ({ item }) => {
   const isInCart = !!cartItem;
 
   const onConfirm = ({ qty, selectedAddOns, specialInstructions, totalItemPrice }) => {
-    addToCart(item, { qty, selectedAddOns, specialInstructions });
+    addToCart(item, { qty, selectedAddOns, specialInstructions, totalItemPrice });
     setOpen(false);
   };
 
@@ -35,20 +52,18 @@ const MenuItemCard = ({ item }) => {
 
   const getCategoryColor = (categoryId) => {
     const cat = categoryId || '';
-    if (cat === 'silog_meals' || cat === 'meal' || cat === 'silog') return theme.colors.primaryContainer;
-    if (cat === 'snacks' || cat === 'snack') {
-      // Use a more visible color in dark mode
-      return themeMode === 'dark' 
-        ? theme.colors.secondary + '30' 
-        : theme.colors.secondaryLight + '20';
-    }
-    if (cat === 'drinks' || cat === 'drink') {
-      // Use a more visible color in dark mode
-      return themeMode === 'dark'
-        ? theme.colors.info + '30'
-        : theme.colors.infoLight;
-    }
+    if (cat === 'silog_meals' || cat === 'meal' || cat === 'silog') return PALETTE.red + '15';
+    if (cat === 'snacks' || cat === 'snack') return PALETTE.olive + '15';
+    if (cat === 'drinks' || cat === 'drink') return PALETTE.orange + '15';
     return theme.colors.surface;
+  };
+
+  const getCategoryIconColor = (categoryId) => {
+    const cat = categoryId || '';
+    if (cat === 'silog_meals' || cat === 'meal' || cat === 'silog') return PALETTE.red;
+    if (cat === 'snacks' || cat === 'snack') return PALETTE.olive;
+    if (cat === 'drinks' || cat === 'drink') return PALETTE.orange;
+    return theme.colors.primary;
   };
 
   const cardAnimatedStyle = useAnimatedStyle(() => ({
@@ -64,40 +79,72 @@ const MenuItemCard = ({ item }) => {
 
   const categoryIcon = getCategoryIcon(item.category || item.categoryId);
   const hasImage = item?.imageUrl && item.imageUrl.trim() !== '';
+  const imageSource = hasImage ? getLocalImage(item.imageUrl) : null;
+  const isRemoteImage = imageSource && typeof imageSource === 'object' && imageSource.uri;
+  
+  // Debug logging for images (only in dev mode)
+  if (__DEV__ && hasImage && !imageSource) {
+    console.log(`[MenuItemCard] No image found for ${item.name}:`, item.imageUrl);
+  }
+
+  // Button sizing constants
+  const BUTTON_SIZE = 42; // circle size legacy
+  const RECT_BUTTON_HEIGHT = 40; // rectangle height for spanning add button
+  const BUTTON_MARGIN = 12;
+  const CART_BADGE_SIZE = 22;
+  // final button size reduces slightly when circle button is in cart to reduce overlap
+  // badge vertical offset to center the cart badge on the right side of the rect button
+  const badgeBottomOffset = 12 + Math.round((RECT_BUTTON_HEIGHT - CART_BADGE_SIZE) / 2);
+  // badge placement - keep a small gap between badge and add button
+  const badgeRightOffset = 12;
+  const rectButtonPaddingRight = CART_BADGE_SIZE + 8; // reserve space so the label can be centered visually without badge overlap
+  const addButtonRightOffset = badgeRightOffset + CART_BADGE_SIZE + 12; // add button is left from the badge to avoid overlap with extra padding
+  // finalButtonSize and iconSize were for previous circular add button; removed since using a rectangle button
 
   return (
     <AnimatedView style={[
       styles.card, 
       { 
         backgroundColor: theme.colors.surface,
-        borderColor: theme.colors.border,
+        borderColor: isInCart ? hexToRgba(PALETTE.orange, 0.25) : theme.colors.border,
         borderRadius: borderRadius.xl,
-        padding: spacing.md,
+        padding: spacing.sm,
+          paddingBottom: spacing.md + RECT_BUTTON_HEIGHT + BUTTON_MARGIN,
         margin: spacing.sm,
       },
       cardAnimatedStyle
     ]}>
       <TouchableOpacity onPress={handlePress} activeOpacity={0.9} style={{ flex: 1 }}>
-        <View style={[styles.imageContainer, { backgroundColor: 'transparent' }]}>
+          <View style={[styles.imageContainer, { backgroundColor: 'transparent' }]}> 
           <View style={[
             styles.iconContainer, 
             { 
-              backgroundColor: hasImage ? 'transparent' : getCategoryColor(item.category || item.categoryId),
+              backgroundColor: imageSource ? '#ffffff' : getCategoryColor(item.category || item.categoryId),
               borderRadius: borderRadius.round,
-              width: 100,
-              height: 100,
+              width: 84,
+              height: 84,
               overflow: 'hidden',
+              padding: imageSource ? 6 : 0,
+              borderWidth: isInCart ? 2 : 0,
+              borderColor: isInCart ? PALETTE.orange : 'transparent',
             }
           ]}>
-            {hasImage ? (
+            {imageSource ? (
               <Image
-                source={{ uri: item.imageUrl }}
+                source={imageSource}
                 style={{
-                  width: 100,
-                  height: 100,
-                  borderRadius: borderRadius.round,
+                  width: 84 - 12,
+                  height: 84 - 12,
+                  borderRadius: (84 - 12) / 2,
+                  borderWidth: isInCart ? 3 : 0,
+                  borderColor: isInCart ? PALETTE.orange : 'transparent',
                 }}
                 resizeMode="cover"
+                onError={(error) => {
+                  if (__DEV__) {
+                    console.log(`[MenuItemCard] Image load error for ${item.name}:`, error.nativeEvent.error);
+                  }
+                }}
               />
             ) : (
             <Icon
@@ -105,37 +152,37 @@ const MenuItemCard = ({ item }) => {
               library={categoryIcon.library}
               size={48}
               responsive={false}
-                color={
-                  (item.category || item.categoryId) === 'snacks' || (item.category || item.categoryId) === 'snack'
-                    ? theme.colors.secondary || '#7C3AED' // Purple for snacks
-                    : (item.category || item.categoryId) === 'drinks' || (item.category || item.categoryId) === 'drink'
-                    ? theme.colors.info || '#3B82F6' // Blue for drinks
-                    : theme.colors.primary // Yellow for silog meals
-                }
+              color={getCategoryIconColor(item.category || item.categoryId)}
               />
             )}
+            {/* removed top-right selectedBadge — replaced by red cartBadge at card level */}
           </View>
         </View>
-        <View style={styles.content}>
+          <View style={[
+            styles.content,
+            { alignItems: 'center', paddingLeft: 0, paddingRight: 0 }
+          ]}>
           <Text 
             style={[
               styles.title, 
               { 
                 color: theme.colors.text,
                 ...typography.bodyBold,
-                marginBottom: spacing.sm,
+                  marginBottom: Math.max(2, Math.round((spacing.xs || 4) / 2)),
+                textAlign: 'center',
               }
             ]} 
             numberOfLines={2}
           >
             {item.name.replace(/\s*\((Small|Large)\)\s*/i, '')}
           </Text>
-          <View style={styles.priceContainer}>
+          <View style={[styles.priceContainer, { marginTop: Math.max(0, Math.round((spacing.xs || 4) / 3)) }]}>
             <Text style={[
-              styles.price, 
-              { 
-                color: theme.colors.primary,
+              styles.price,
+              {
+                color: PALETTE.orange,
                 ...typography.h4,
+                fontWeight: '900',
               }
             ]}>
               ₱{(item.price || 0).toFixed(2)}
@@ -143,62 +190,44 @@ const MenuItemCard = ({ item }) => {
           </View>
         </View>
       </TouchableOpacity>
-      <View style={[styles.buttonContainer, { justifyContent: 'space-between' }]}>
-        {isInCart ? (
-          <AnimatedButton
-            style={[
-              styles.removeButton, 
-              { 
-                backgroundColor: theme.colors.error,
-                borderWidth: 1.5,
-                borderColor: theme.colors.error + '60',
-                borderRadius: borderRadius.round,
-                width: 48,
-                height: 48,
-                shadowColor: theme.colors.error,
-              }
-            ]}
-            onPress={() => {
-              if (cartItem.qty > 1) {
-                updateQty(cartItem.id, cartItem.qty - 1);
-              } else {
-                removeFromCart(cartItem.id);
-              }
-            }}
-          >
-            <Icon
-              name="remove"
-              library="ionicons"
-              size={28}
-              color={theme.colors.onPrimary}
-            />
-          </AnimatedButton>
-        ) : (
-          <View style={{ width: 48 }} />
-        )}
+
+      {/* Floating add button positioned absolute bottom-right */}
+      {isInCart && (
+        <View style={[styles.cartBadge, { right: spacing.md - Math.round(CART_BADGE_SIZE/2), bottom: badgeBottomOffset + 2, width: CART_BADGE_SIZE, height: CART_BADGE_SIZE, borderRadius: CART_BADGE_SIZE/2, backgroundColor: PALETTE.red, borderWidth: 2, borderColor: theme.colors.surface, transform: [{ translateY: -2 }] }]}> 
+          <Text style={[styles.cartBadgeText, { color: '#FFFFFF' }]}>{cartItem.qty}</Text>
+        </View>
+      )}
+      {/* Optional ring (halo) behind button to make it more visible on darker surfaces */}
+      <View style={[styles.addButtonRing, { left: spacing.md - 4, right: spacing.md - 4, height: RECT_BUTTON_HEIGHT + 8, borderRadius: (RECT_BUTTON_HEIGHT + 8) / 2, backgroundColor: PALETTE.orange + '12' }]} />
       <AnimatedButton
-        style={[
-          styles.addButton, 
-          { 
-            backgroundColor: theme.colors.primary,
-              borderWidth: 1.5,
-              borderColor: theme.colors.primaryDark || '#F9A825',
-            borderRadius: borderRadius.round,
-            width: 48,
-            height: 48,
-            shadowColor: theme.colors.primary,
+            style={[
+          styles.addButtonRect,
+          {
+            backgroundColor: PALETTE.yellow,
+            borderWidth: 1.75,
+            borderColor: PALETTE.orange + 'CC',
+            borderRadius: borderRadius.lg,
+            left: spacing.md,
+            right: spacing.md,
+            height: RECT_BUTTON_HEIGHT,
+            shadowColor: PALETTE.orange,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.25,
+            shadowRadius: 6,
+            elevation: 4,
+            paddingLeft: rectButtonPaddingRight + (spacing.md / 2),
+            paddingRight: rectButtonPaddingRight + (spacing.md / 2),
+            paddingVertical: 0,
+            flexDirection: 'row',
           }
         ]}
         onPress={handlePress}
       >
-        <Icon
-          name="add"
-          library="ionicons"
-          size={28}
-          color={theme.colors.onPrimary}
-        />
+        <View style={[styles.addContents, { height: RECT_BUTTON_HEIGHT }] }>
+          <Text style={{ color: '#111', fontWeight: '700', fontSize: 16, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.08)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 1 }}>Add</Text>
+        </View>
       </AnimatedButton>
-      </View>
+      {/* overlay fallback removed */}
       {open && (
         <ItemCustomizationModal
           visible={open}
@@ -223,6 +252,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     overflow: 'hidden',
+    position: 'relative',
   },
   imageContainer: {
     alignItems: 'center',
@@ -252,22 +282,43 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
+  selectedBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    minWidth: 26,
+    height: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  selectedBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
   content: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingTop: 4,
+    justifyContent: 'center',
+    paddingTop: 6,
   },
   title: {
-    minHeight: 44,
+    minHeight: 32,
     lineHeight: 20,
   },
   priceContainer: {
     marginTop: 8,
   },
+  // priceRow and qtyCount removed; price is single-line and qty is not inlined
   price: {
     // Typography handled via theme
+    flexShrink: 0,
   },
   buttonContainer: {
+    // Deprecated; floating buttons used instead
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
@@ -289,6 +340,48 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  addButtonFloating: {
+    position: 'absolute',
+    bottom: 12,
+    zIndex: 10,
+  },
+  addButtonRect: {
+    position: 'absolute',
+    bottom: 12,
+    zIndex: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // left/right values will be set inline using theme spacing
+  },
+  addContents: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  addButtonRing: {
+    position: 'absolute',
+    bottom: 8,
+    zIndex: 9,
+    borderRadius: 999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartBadge: {
+    position: 'absolute',
+    zIndex: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 4,
+  },
+  cartBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  // removeButtonFloating removed - no minus button
 });
 
 export default memo(MenuItemCard);

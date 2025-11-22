@@ -592,7 +592,7 @@ const CustomerOrderNotification = () => {
               <FlatList
                 data={displayOrders}
                 renderItem={renderOrderItem}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => item?.id ? String(item.id) : `${(item?.orderId || item?.name || 'order')}-${index}`}
                 contentContainerStyle={[
                   styles.listContent,
                   {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ScrollView, Dimensions, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ScrollView, useWindowDimensions, TextInput, Image, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRealTimeCollection } from '../../hooks/useRealTime';
@@ -10,6 +10,7 @@ import { orderService } from '../../services/orderService';
 import CategoryFilter from '../../components/ui/CategoryFilter';
 import ThemeToggle from '../../components/ui/ThemeToggle';
 import Icon from '../../components/ui/Icon';
+import { getLocalImage } from '../../config/menuImages';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import OrderSummary from '../../components/cashier/OrderSummary';
 import PaymentControls from '../../components/cashier/PaymentControls';
@@ -19,14 +20,13 @@ import ConfirmationModal from '../../components/ui/ConfirmationModal';
 import NotificationModal from '../../components/ui/NotificationModal';
 import CashierPaymentNotification from '../../components/cashier/CashierPaymentNotification';
 
-const { width } = Dimensions.get('window');
-
 const CashierOrderingScreen = () => {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme, spacing, borderRadius, typography } = useTheme();
   const { logout } = React.useContext(AuthContext);
   const { items, total, clearCart, addToCart, calculateTotalPrice } = useCart();
+  const { width } = useWindowDimensions();
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -38,6 +38,7 @@ const CashierOrderingScreen = () => {
   const { data: menuItemsRaw, loading: itemsLoading } = useRealTimeCollection('menu', [], ['name', 'asc']);
   
   // Filter available items (support both 'available' boolean and 'status' string)
+  // Show UI immediately even if loading - menu will populate when data arrives
   const menuItems = useMemo(() => {
     return (menuItemsRaw || []).filter(item => 
       item.status === 'available' || item.available === true
@@ -51,7 +52,7 @@ const CashierOrderingScreen = () => {
     const categoryNames = {
       'silog_meals': 'Silog Meals',
       'snacks': 'Snacks',
-      'drinks': 'Drinks & Beverages'
+      'drinks': 'Beverages'
     };
     
     menuItems.forEach(item => {
@@ -134,14 +135,8 @@ const CashierOrderingScreen = () => {
     }
   };
 
-  if (itemsLoading) {
-    return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
-        <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading menu...</Text>
-      </View>
-    );
-  }
-
+  // Remove loading check - show UI immediately, menu will populate when data arrives
+  // This makes the screen appear instantly instead of showing a loading screen
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Header */}
@@ -383,6 +378,9 @@ const CashierOrderingScreen = () => {
                       ...typography.body,
                       textAlignVertical: 'center',
                       paddingVertical: 0,
+                      // Ensure the text input doesn't cover the clear button.
+                      // Reserve space equivalent to the cancel button width + margin.
+                      paddingRight: 48,
                     }
                   ]}
                   textAlignVertical="center"
@@ -398,16 +396,23 @@ const CashierOrderingScreen = () => {
                       height: 32,
                       justifyContent: 'center',
                       alignItems: 'center',
+                      // Position absolutely so native text input doesn't overlap on Android
+                      position: 'absolute',
+                      right: spacing.md - 4,
+                      zIndex: 10,
+                      // Android needs elevation to stack above the TextInput, iOS uses zIndex
+                      ...Platform.select({ android: { elevation: 6 }, ios: { zIndex: 10 } }),
                     }
                   ]}
                 >
-                  <Icon
-                    name="close"
-                    library="ionicons"
-                    size={18}
-                    color={theme.colors.error}
-                    style={{ margin: 0 }}
-                  />
+                    <Icon
+                      name="close"
+                      library="ionicons"
+                      size={20}
+                      color={theme.colors.onSurface}
+                      hitArea={false}
+                      style={{ margin: 0 }}
+                    />
                 </AnimatedButton>
               </View>
             ) : (
@@ -489,9 +494,9 @@ const CashierOrderingScreen = () => {
               </View>
             ) : (
               <View style={styles.quickAddGrid}>
-                {filteredBySearch.map((item) => (
+                {filteredBySearch.map((item, idx) => (
                   <AnimatedButton
-                    key={item.id}
+                    key={item?.id ? String(item.id) : `${(item?.name || 'item')}-${idx}`}
                     style={[
                       styles.quickAddBtn,
                       {
@@ -518,14 +523,29 @@ const CashierOrderingScreen = () => {
                           width: 48,
                           height: 48,
                           marginBottom: spacing.sm,
+                          overflow: 'hidden',
                         }
                       ]}>
-                        <Icon
-                          name="restaurant"
-                          library="ionicons"
-                          size={24}
-                          color={theme.colors.primary}
-                        />
+                        {(() => {
+                          const localImage = getLocalImage(item.imageUrl);
+                          if (localImage) {
+                            return (
+                              <Image
+                                source={localImage}
+                                style={{ width: 48, height: 48, borderRadius: 24 }}
+                                resizeMode="cover"
+                              />
+                            );
+                          }
+                          return (
+                            <Icon
+                              name="restaurant"
+                              library="ionicons"
+                              size={24}
+                              color={theme.colors.primary}
+                            />
+                          );
+                        })()}
                       </View>
                       <Text style={[
                         styles.quickAddText,
@@ -562,8 +582,8 @@ const CashierOrderingScreen = () => {
           visible={!!quickAddItem}
           onClose={() => setQuickAddItem(null)}
           item={quickAddItem}
-          onConfirm={({ qty, selectedAddOns, specialInstructions }) => {
-            addToCart(quickAddItem, { qty, selectedAddOns, specialInstructions });
+          onConfirm={({ qty, selectedAddOns, specialInstructions, totalItemPrice }) => {
+            addToCart(quickAddItem, { qty, selectedAddOns, specialInstructions, totalItemPrice });
             setQuickAddItem(null);
           }}
           calculateTotalPrice={calculateTotalPrice}
@@ -651,6 +671,9 @@ const styles = StyleSheet.create({
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    position: 'relative',
+    // Allow absolutely positioned close button to show outside the container
+    overflow: 'visible',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
@@ -660,6 +683,8 @@ const styles = StyleSheet.create({
     // Typography handled via theme
     includeFontPadding: false,
     paddingVertical: 0,
+    // Provide a default paddingRight to avoid content overlapping the cancel icon
+    paddingRight: 48,
   },
   searchButton: {
     flexDirection: 'row',
@@ -680,7 +705,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
-    elevation: 1,
+    elevation: 6,
+    zIndex: 10,
   },
   cartButton: {
     justifyContent: 'center',

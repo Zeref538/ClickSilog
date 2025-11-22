@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Image,
   Modal,
-  Dimensions,
+  useWindowDimensions,
   PanResponder,
   ActivityIndicator,
 } from 'react-native';
@@ -14,13 +14,13 @@ import { alertService } from '../../services/alertService';
 import Icon from './Icon';
 import AnimatedButton from './AnimatedButton';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const CROP_SIZE = Math.min(SCREEN_WIDTH - 40, 300);
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
 
 const ImageCropper = ({ visible, imageUri, onClose, onCrop }) => {
   const { theme, spacing, borderRadius, typography } = useTheme();
+  const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const CROP_SIZE = useMemo(() => Math.min(SCREEN_WIDTH - 40, 300), [SCREEN_WIDTH]);
   const [scale, setScale] = useState(1);
   const [translateX, setTranslateX] = useState(0);
   const [translateY, setTranslateY] = useState(0);
@@ -348,6 +348,8 @@ const ImageCropper = ({ visible, imageUri, onClose, onCrop }) => {
                   {
                     width: scaledWidth,
                     height: scaledHeight,
+                    marginLeft: -CROP_SIZE / 2,
+                    marginTop: -CROP_SIZE / 2,
                     transform: [
                       { translateX },
                       { translateY },
@@ -538,8 +540,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginLeft: -CROP_SIZE / 2,
-    marginTop: -CROP_SIZE / 2,
+    // marginLeft and marginTop moved to inline styles since they depend on CROP_SIZE
   },
   overlay: {
     position: 'absolute',

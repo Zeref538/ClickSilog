@@ -3,6 +3,8 @@ import { createStackNavigator } from '@react-navigation/stack';
 import CashierOrderingScreen from '../screens/cashier/CashierOrderingScreen';
 import CashierDashboard from '../screens/cashier/CashierDashboard';
 import CashierPaymentScreen from '../screens/cashier/CashierPaymentScreen';
+import GCashPaymentScreen from '../screens/customer/GCashPaymentScreen';
+import ReceiptView from '../components/ui/ReceiptView';
 import HeaderHomeButton from '../components/ui/HeaderHomeButton';
 
 const Stack = createStackNavigator();
@@ -36,7 +38,23 @@ const CashierStack = () => (
       name="CashierPayment" 
       component={CashierPaymentScreen} 
       options={{ 
-        title: 'Cash Payment',
+        title: 'Payment',
+        headerLeft: () => <HeaderHomeButton />
+      }} 
+    />
+    <Stack.Screen 
+      name="GCashPayment" 
+      component={GCashPaymentScreen}
+      options={{ 
+        title: 'GCash Payment',
+        headerLeft: () => <HeaderHomeButton />
+      }} 
+    />
+    <Stack.Screen 
+      name="Receipt" 
+      component={ReceiptView} 
+      options={{ 
+        title: 'Receipt',
         headerLeft: () => <HeaderHomeButton />
       }} 
     />

@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// Use legacy API for compatibility
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useRealTimeCollection } from '../../hooks/useRealTime';
+import { alertService } from '../../services/alertService';
 import Icon from '../../components/ui/Icon';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import ThemeToggle from '../../components/ui/ThemeToggle';
@@ -112,6 +116,9 @@ const SalesReportScreen = () => {
   const { theme, spacing, borderRadius, typography } = useTheme();
   const [dateFilter, setDateFilter] = useState('today'); // today, week, month, all
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [savedFiles, setSavedFiles] = useState([]);
+  const [checkingFiles, setCheckingFiles] = useState(false);
 
   const { data: orders, loading } = useRealTimeCollection('orders', [], ['timestamp', 'desc']);
 
@@ -183,13 +190,49 @@ const SalesReportScreen = () => {
   const paymentMethodBreakdown = useMemo(() => {
     const breakdown = { cash: 0, gcash: 0 };
     completedOrders.forEach(order => {
-      const method = order.paymentMethod || 'cash';
-      if (method.toLowerCase() === 'gcash') {
+      if (!order) return;
+      
+      // Determine payment method with multiple checks
+      let isGCash = false;
+      
+      // Check 1: Explicit paymentMethod field
+      if (order.paymentMethod) {
+        const method = String(order.paymentMethod).trim().toLowerCase();
+        if (method === 'gcash' || method === 'g-cash' || method === 'g cash' || method.includes('gcash')) {
+          isGCash = true;
+        }
+      }
+      
+      // Check 2: paymentStatus = 'paid' (GCash orders typically have this, cash orders usually don't)
+      // But only if paymentMethod wasn't explicitly set to something else
+      if (!isGCash && order.paymentStatus === 'paid') {
+        // If there's a paymentId or sourceId, it's definitely GCash (cash doesn't have these)
+        if (order.paymentId || order.sourceId || order.paymentIntentId) {
+          isGCash = true;
+        }
+      }
+      
+      // Check 3: Check for payment-related IDs that indicate GCash
+      // GCash payments typically have paymentId, sourceId, or paymentIntentId
+      if (!isGCash && (order.paymentId || order.sourceId || order.paymentIntentId)) {
+        isGCash = true;
+      }
+      
+      // Check 4: If order has paymentStatus='paid' and no explicit cash indicator, assume GCash
+      // Cash orders typically don't have paymentStatus set to 'paid'
+      if (!isGCash && order.paymentStatus === 'paid' && !order.paymentMethod) {
+        isGCash = true;
+      }
+      
+      // Add to breakdown
+      if (isGCash) {
         breakdown.gcash += Number(order.total) || 0;
       } else {
         breakdown.cash += Number(order.total) || 0;
       }
     });
+    
+    console.log('Payment breakdown calculated:', breakdown, 'from', completedOrders.length, 'orders');
     return breakdown;
   }, [completedOrders]);
 
@@ -534,6 +577,264 @@ const SalesReportScreen = () => {
     { id: 'all', label: 'All Time' },
   ];
 
+  // CSV Export functionality
+  const escapeCSV = (value) => {
+    if (value === null || value === undefined) return '';
+    const stringValue = String(value);
+    // If contains comma, quote, or newline, wrap in quotes and escape quotes
+    if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+      return `"${stringValue.replace(/"/g, '""')}"`;
+    }
+    return stringValue;
+  };
+
+  const generateCSV = () => {
+    const lines = [];
+    
+    // Header with date filter info
+    const filterLabel = dateFilters.find(f => f.id === dateFilter)?.label || dateFilter;
+    lines.push('SALES REPORT - ORDERS');
+    lines.push(`Date Range: ${filterLabel}`);
+    lines.push(`Generated: ${new Date().toLocaleString()}`);
+    lines.push(''); // Empty line
+    
+    // CSV Header for orders
+    lines.push('Order ID,Date,Time,Status,Payment Method,Order Type,Table/Ticket,Subtotal,Discount,Total,Item Count,Items');
+    
+    // Only include orders based on the selected date filter
+    completedOrders.forEach(order => {
+      const orderDate = new Date(order.timestamp || order.createdAt || 0);
+      const dateStr = orderDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+      const timeStr = orderDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      
+      // Determine payment method
+      let method = order.paymentMethod;
+      if (!method || typeof method !== 'string') {
+        method = order.paymentStatus === 'paid' ? 'GCash' : 'Cash';
+      } else {
+        method = String(method).trim();
+        if (method.toLowerCase() === 'gcash') method = 'GCash';
+        else method = 'Cash';
+      }
+      
+      // Determine order type
+      const orderType = order.orderType === 'take-out' ? 'Take-Out' : 'Dine-In';
+      
+      // Table/Ticket info
+      const tableOrTicket = order.tableNumber 
+        ? `Table ${order.tableNumber}` 
+        : order.ticketNumber 
+        ? `Ticket ${order.ticketNumber}` 
+        : order.customerName 
+        ? order.customerName 
+        : 'N/A';
+      
+      // Item count
+      const itemCount = (order.items || []).reduce((sum, item) => sum + (Number(item.quantity || item.qty || 0)), 0);
+      
+      // Discount info
+      const discount = Number(order.discountAmount || 0);
+      const subtotal = Number(order.subtotal || order.total || 0) + discount; // Add discount back to get subtotal
+      
+      // Format items as a string (e.g., "Item1 x2, Item2 x1")
+      const itemsList = (order.items || []).map(item => {
+        const qty = item.quantity || item.qty || 1;
+        const name = item.name || 'Unknown Item';
+        return `${escapeCSV(name)} x${qty}`;
+      }).join('; ');
+      
+      lines.push([
+        escapeCSV(order.id || 'N/A'),
+        dateStr,
+        timeStr,
+        escapeCSV(order.status || 'N/A'),
+        method,
+        orderType,
+        escapeCSV(tableOrTicket),
+        `₱${subtotal.toFixed(2)}`,
+        discount > 0 ? `₱${discount.toFixed(2)}` : '₱0.00',
+        `₱${Number(order.total || 0).toFixed(2)}`,
+        itemCount,
+        escapeCSV(itemsList || 'N/A')
+      ].join(','));
+    });
+    
+    return lines.join('\n');
+  };
+
+  const handleExportCSV = async () => {
+    try {
+      setExporting(true);
+      
+      // Generate CSV content
+      const csvContent = generateCSV();
+      
+      if (!csvContent || csvContent.trim().length === 0) {
+        throw new Error('No data to export. Please ensure there are completed orders in the selected period.');
+      }
+      
+      // Create filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filterLabel = dateFilters.find(f => f.id === dateFilter)?.label || dateFilter;
+      const filename = `SalesReport_${filterLabel}_${timestamp}.csv`;
+      
+      // Use cache directory which is more accessible than document directory
+      // On Android, cache directory is accessible via file managers
+      const cacheDir = FileSystem.cacheDirectory;
+      if (!cacheDir) {
+        throw new Error('Cache directory is not available');
+      }
+      
+      // Create file path in cache directory
+      const fileUri = `${cacheDir}${filename}`;
+      
+      console.log('[CSV Export] Starting export...');
+      console.log('[CSV Export] File path:', fileUri);
+      console.log('[CSV Export] CSV content length:', csvContent.length, 'characters');
+      console.log('[CSV Export] CSV preview (first 200 chars):', csvContent.substring(0, 200));
+      
+      // Write file using legacy API (no encoding needed, UTF-8 is default)
+      await FileSystem.writeAsStringAsync(fileUri, csvContent);
+      
+      // Verify file was written
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      console.log('[CSV Export] File info after write:', {
+        exists: fileInfo.exists,
+        size: fileInfo.size,
+        uri: fileInfo.uri
+      });
+      
+      if (!fileInfo.exists) {
+        throw new Error('File was not created. Please check file system permissions.');
+      }
+      
+      if (fileInfo.size === 0) {
+        throw new Error('File was created but is empty.');
+      }
+      
+      // Check if sharing is available
+      const isAvailable = await Sharing.isAvailableAsync();
+      
+      if (isAvailable) {
+        // Share the file - this allows user to save to Downloads or any location
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/csv',
+          dialogTitle: 'Save Sales Report to Downloads',
+          UTI: 'public.comma-separated-values-text', // iOS
+        });
+        
+        const successMessage = `Sales report exported successfully!\n\nFile: ${filename}\nSize: ${(fileInfo.size / 1024).toFixed(2)} KB\n\n📁 HOW TO SAVE TO DOWNLOADS:\n\n1. In the share dialog, look for "Files" or "File Manager" app\n2. Tap on "Files" or "File Manager"\n3. Navigate to "Downloads" folder\n4. Tap "Save" or "Save here"\n\nAlternatively, you can:\n• Use "Drive" to save to Google Drive\n• Use "Gmail" to email it to yourself\n• Use "Quick Share" to send to another device`;
+        console.log('[CSV Export] Export successful:', successMessage);
+        // Show instructions after share dialog
+        setTimeout(() => {
+          alertService.info('Export Successful - How to Save', successMessage);
+        }, 1500);
+      } else {
+        // Sharing not available, but file is saved in cache
+        const savedMessage = `File saved successfully!\n\nFile: ${filename}\nSize: ${(fileInfo.size / 1024).toFixed(2)} KB\nLocation: ${fileUri}\n\nNote: To access this file, use a file manager app and navigate to the app's cache directory.`;
+        console.log('[CSV Export] File saved (sharing unavailable):', savedMessage);
+        alertService.info('File Saved', savedMessage);
+      }
+    } catch (error) {
+      console.error('[CSV Export] Export error:', error);
+      console.error('[CSV Export] Error stack:', error.stack);
+      alertService.error('Export Failed', error.message || 'Failed to export sales report. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Function to check for saved CSV files
+  const checkSavedFiles = async () => {
+    try {
+      setCheckingFiles(true);
+      // Check both cache and document directories
+      const cacheDir = FileSystem.cacheDirectory;
+      const documentDir = FileSystem.documentDirectory;
+      
+      if (!cacheDir && !documentDir) {
+        alertService.error('Error', 'File directories are not available');
+        return;
+      }
+
+      const allFiles = [];
+      
+      // Check cache directory
+      if (cacheDir) {
+        try {
+          console.log('[CSV Export] Checking cache directory:', cacheDir);
+          const cacheFiles = await FileSystem.readDirectoryAsync(cacheDir);
+          const csvFiles = cacheFiles.filter(file => file.endsWith('.csv'));
+          console.log('[CSV Export] Found CSV files in cache:', csvFiles);
+          
+          for (const filename of csvFiles) {
+            const fileUri = `${cacheDir}${filename}`;
+            const info = await FileSystem.getInfoAsync(fileUri);
+            if (info.exists) {
+              allFiles.push({
+                name: filename,
+                uri: fileUri,
+                size: info.size,
+                exists: info.exists,
+                modified: info.modificationTime ? new Date(info.modificationTime * 1000).toLocaleString() : 'Unknown',
+                location: 'Cache'
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('[CSV Export] Error reading cache directory:', error);
+        }
+      }
+      
+      // Check document directory (for backwards compatibility)
+      if (documentDir) {
+        try {
+          console.log('[CSV Export] Checking document directory:', documentDir);
+          const docFiles = await FileSystem.readDirectoryAsync(documentDir);
+          const csvFiles = docFiles.filter(file => file.endsWith('.csv'));
+          console.log('[CSV Export] Found CSV files in documents:', csvFiles);
+          
+          for (const filename of csvFiles) {
+            const fileUri = `${documentDir}${filename}`;
+            const info = await FileSystem.getInfoAsync(fileUri);
+            if (info.exists) {
+              allFiles.push({
+                name: filename,
+                uri: fileUri,
+                size: info.size,
+                exists: info.exists,
+                modified: info.modificationTime ? new Date(info.modificationTime * 1000).toLocaleString() : 'Unknown',
+                location: 'Documents'
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('[CSV Export] Error reading document directory:', error);
+        }
+      }
+      
+      setSavedFiles(allFiles);
+      
+      if (allFiles.length === 0) {
+        alertService.info('No Files Found', 'No CSV files found. Export a report first to create a file.');
+      } else {
+        const fileList = allFiles.map(f => 
+          `• ${f.name}\n  Size: ${(f.size / 1024).toFixed(2)} KB\n  Modified: ${f.modified}\n  Location: ${f.location}`
+        ).join('\n\n');
+        
+        alertService.info(
+          `Found ${allFiles.length} CSV File(s)`,
+          `Saved CSV files:\n\n${fileList}\n\nNote: Use the share dialog when exporting to save files to your Downloads folder where they'll be visible in file explorer.`
+        );
+      }
+    } catch (error) {
+      console.error('[CSV Export] Error checking files:', error);
+      alertService.error('Error', error.message || 'Failed to check for saved files.');
+    } finally {
+      setCheckingFiles(false);
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[
@@ -578,6 +879,7 @@ const SalesReportScreen = () => {
                   color={theme.colors.error}
                   responsive={true}
                   hitArea={false}
+                  style={{ margin: 0 }}
                 />
               </View>
             </AnimatedButton>
@@ -600,7 +902,9 @@ const SalesReportScreen = () => {
               Sales Report
             </Text>
           </View>
-          <ThemeToggle />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <ThemeToggle />
+          </View>
         </View>
       </View>
 
@@ -1109,7 +1413,7 @@ const SalesReportScreen = () => {
             <View style={{ marginTop: spacing.md }}>
               {topItems.slice(0, 5).map((item, index) => (
                 <View
-                  key={item.name}
+                  key={item?.id ? String(item.id) : `${(item?.name || 'topitem')}-${index}`}
                   style={[
                     styles.topItemRow,
                     {
@@ -1621,6 +1925,107 @@ const SalesReportScreen = () => {
             ]}>
               Loading Sales Data...
             </Text>
+          </View>
+        )}
+
+        {/* Export CSV Button at Bottom */}
+        {!loading && completedOrders.length > 0 && (
+          <View style={{ padding: spacing.md, paddingBottom: spacing.xl }}>
+            <AnimatedButton
+              onPress={handleExportCSV}
+              disabled={exporting || loading || completedOrders.length === 0}
+              style={{
+                backgroundColor: exporting || loading || completedOrders.length === 0 
+                  ? theme.colors.surfaceVariant 
+                  : theme.colors.success,
+                borderRadius: borderRadius.md,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.lg,
+                opacity: exporting || loading || completedOrders.length === 0 ? 0.6 : 1,
+                shadowColor: theme.colors.success,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 3,
+              }}
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={theme.colors.onSurface} />
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, justifyContent: 'center' }}>
+                  <Icon
+                    name="download"
+                    library="ionicons"
+                    size={20}
+                    color={exporting || loading || completedOrders.length === 0 
+                      ? theme.colors.textSecondary 
+                      : theme.colors.onSurface}
+                    responsive={true}
+                    hitArea={false}
+                  />
+                  <Text style={[
+                    {
+                      color: exporting || loading || completedOrders.length === 0 
+                        ? theme.colors.textSecondary 
+                        : theme.colors.onSurface,
+                      ...typography.bodyBold,
+                      fontSize: 16,
+                    }
+                  ]}>
+                    Export CSV
+                  </Text>
+                </View>
+              )}
+            </AnimatedButton>
+            
+            {/* Check Saved Files Button */}
+            <AnimatedButton
+              onPress={checkSavedFiles}
+              disabled={checkingFiles}
+              style={{
+                backgroundColor: checkingFiles 
+                  ? theme.colors.surfaceVariant 
+                  : theme.colors.primary,
+                borderRadius: borderRadius.md,
+                paddingVertical: spacing.md,
+                paddingHorizontal: spacing.lg,
+                opacity: checkingFiles ? 0.6 : 1,
+                shadowColor: theme.colors.primary,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 3,
+                marginTop: spacing.sm,
+              }}
+            >
+              {checkingFiles ? (
+                <ActivityIndicator size="small" color={theme.colors.onSurface} />
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, justifyContent: 'center' }}>
+                  <Icon
+                    name="folder"
+                    library="ionicons"
+                    size={20}
+                    color={checkingFiles 
+                      ? theme.colors.textSecondary 
+                      : theme.colors.onSurface}
+                    responsive={true}
+                    hitArea={false}
+                  />
+                  <Text style={[
+                    {
+                      color: checkingFiles 
+                        ? theme.colors.textSecondary 
+                        : theme.colors.onSurface,
+                      ...typography.bodyBold,
+                      fontSize: 16,
+                    }
+                  ]}>
+                    Check Saved Files
+                  </Text>
+                </View>
+              )}
+            </AnimatedButton>
           </View>
         )}
       </ScrollView>

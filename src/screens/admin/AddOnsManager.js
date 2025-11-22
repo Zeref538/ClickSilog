@@ -20,7 +20,21 @@ const AddOnsManager = ({ navigation }) => {
   const [editingItem, setEditingItem] = useState(null);
 
   useEffect(() => {
-    const unsub = firestoreService.subscribeCollection('addons', { conditions: [], order: ['createdAt', 'asc'], next: setAddOns });
+    // Show UI immediately with empty addons (non-blocking)
+    setAddOns([]);
+
+    // Subscribe to addons (non-blocking - data will arrive asynchronously)
+    const unsub = firestoreService.subscribeCollection('addons', { 
+      conditions: [], 
+      order: ['createdAt', 'asc'], 
+      next: (addonsList) => {
+        // Use requestAnimationFrame to defer state update to next frame
+        // This prevents blocking the UI thread
+        requestAnimationFrame(() => {
+          setAddOns(addonsList);
+        });
+      }
+    });
     return () => unsub && unsub();
   }, []);
 
@@ -146,6 +160,8 @@ const AddOnsManager = ({ navigation }) => {
                   borderRadius: borderRadius.round,
                   width: 44,
                   height: 44,
+                  minWidth: 44,
+                  minHeight: 44,
                   borderWidth: 1.5,
                   justifyContent: 'center',
                   alignItems: 'center',
@@ -158,6 +174,9 @@ const AddOnsManager = ({ navigation }) => {
                 library="ionicons"
                 size={22}
                 color={theme.colors.text}
+                responsive={true}
+                hitArea={false}
+                style={{ margin: 0 }}
               />
             </AnimatedButton>
             <Icon

@@ -1,88 +1,86 @@
-import React, { useContext, useEffect } from 'react';
-import { View, Text, StyleSheet, BackHandler, ScrollView } from 'react-native';
+import React, { useContext, useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, BackHandler, Animated, useWindowDimensions, InteractionManager } from 'react-native';
 import { AuthContext } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../contexts/ThemeContext';
-import { widthPercentage, scale } from '../utils/responsive';
-import { useResponsive } from '../hooks/useResponsive';
-import ThemeToggle from '../components/ui/ThemeToggle';
+// removed scale import (unused)
 import Icon from '../components/ui/Icon';
-import AnimatedButton from '../components/ui/AnimatedButton';
-
-const RoleButton = ({ label, iconName, color, onPress, theme, borderRadius, spacing, typography }) => {
-  const iconColors = {
-    customer: '#3B82F6',
-    kitchen: '#EF4444',
-    cashier: '#10B981',
-    admin: '#8B5CF6',
-  };
-  
-  const bgColors = {
-    customer: theme.colors.infoLight || '#DBEAFE',
-    kitchen: theme.colors.errorLight || '#FEE2E2',
-    cashier: theme.colors.successLight || '#D1FAE5',
-    admin: theme.colors.secondaryLight || '#E9D5FF',
-  };
-
-  const roleKey = label.toLowerCase();
-  const iconColor = iconColors[roleKey] || theme.colors.primary;
-  const bgColor = bgColors[roleKey] || theme.colors.primaryContainer;
-
-  return (
-    <AnimatedButton 
-      style={[
-        styles.roleBtn, 
-        { 
-          backgroundColor: bgColor,
-          borderRadius: borderRadius.lg,
-          padding: spacing.md,
-          borderWidth: 0,
-          width: '85%',
-          minHeight: 90,
-        }
-      ]} 
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.roleContent, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
-        <View style={[
-          styles.iconContainer,
-          {
-            backgroundColor: theme.colors.surface,
-            borderRadius: borderRadius.round,
-            width: 48,
-            height: 48,
-            marginRight: spacing.md,
-          }
-        ]}>
-          <Icon
-            name={iconName}
-            library="ionicons"
-            size={24}
-            color={iconColor}
-          />
-        </View>
-        <Text style={[
-          styles.roleLabel,
-          {
-            color: theme.colors.text,
-            ...typography.h4,
-            fontWeight: '700',
-            textAlign: 'center',
-          }
-        ]}>
-          {label}
-        </Text>
-      </View>
-    </AnimatedButton>
-  );
-};
+import RoleSwiper from '../components/home/RoleSwiper';
 
 const HomeScreen = () => {
   const { setRole } = useContext(AuthContext);
-  const { theme, spacing, borderRadius, typography } = useTheme();
+  const { theme, spacing, borderRadius, typography, themeMode } = useTheme();
   const navigation = useNavigation();
-  const { isTablet } = useResponsive();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // Role color palettes
+  const roles = [
+    {
+      key: 'customer',
+      label: 'Customer',
+      iconName: 'person',
+      bgColor: '#F9CB43',
+      // Slightly darker yellow for better contrast on text
+      cardColor: '#E7B72D',
+    },
+    {
+      key: 'kitchen',
+      label: 'Kitchen',
+      iconName: 'restaurant',
+      bgColor: '#E52020',
+      // Slightly deeper red to maintain contrast on card
+      cardColor: '#D11717',
+    },
+    {
+      key: 'cashier',
+      label: 'Cashier',
+      iconName: 'card',
+      bgColor: '#FBA518',
+      // Slightly more orange tone for higher contrast
+      cardColor: '#E79507',
+    },
+    {
+      key: 'admin',
+      label: 'Admin',
+      iconName: 'settings',
+      bgColor: '#A89C29',
+      // Slightly darker olive for better card contrast
+      cardColor: '#938923',
+    },
+  ];
+
+  // Animated background color based on scroll position
+  const backgroundColor = scrollX.interpolate({
+    inputRange: roles.map((_, i) => i * SCREEN_WIDTH),
+    outputRange: roles.map((role) => role.bgColor),
+    extrapolate: 'clamp',
+  });
+
+  // Utility to detect if the active role background is light so the header
+  // (ClickSiLog) can pick a readable color.
+  const hexToRgb = (hex) => {
+    const clean = hex.replace('#', '');
+    const bigint = parseInt(clean, 16);
+    return {
+      r: (bigint >> 16) & 255,
+      g: (bigint >> 8) & 255,
+      b: bigint & 255,
+    };
+  };
+
+  const isLightBg = (hex) => {
+    try {
+      const { r, g, b } = hexToRgb(hex);
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      return luminance > 128;
+    } catch {
+      return true;
+    }
+  };
+
+  const headerIsLight = roles && roles[activeIndex] ? isLightBg(roles[activeIndex].bgColor) : (themeMode !== 'dark');
 
   useEffect(() => {
     const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -93,188 +91,84 @@ const HomeScreen = () => {
     return () => backHandler.remove();
   }, []);
 
-  const choose = (role) => {
-    // Navigate immediately on single tap - don't wait for setRole
-    // Navigation happens synchronously, setRole can happen in background
-    if (role === 'customer') {
-      navigation.navigate('TableNumber');
-    } else {
-      // For kitchen, cashier, and admin, go to login screen
-      navigation.navigate('Login', { role });
-    }
+  const choose = async (role) => {
+    // Set role first to ensure context is updated before navigation
+    await setRole(role);
     
-    // Set role in background (async, non-blocking)
-    setRole(role);
+    // Wait for interactions and state updates to complete before navigating
+    // This prevents navigation from being reset by AppNavigator re-render
+    InteractionManager.runAfterInteractions(() => {
+      if (role === 'customer') {
+        navigation.navigate('OrderMode');
+      } else {
+        navigation.navigate('Login', { role });
+      }
+    });
   };
 
   return (
-    <View style={[
-      styles.container, 
-      { 
-        backgroundColor: theme.colors.background,
-      }
-    ]}>
-      <View style={[styles.headerRight, { top: spacing.xl + spacing.sm, right: spacing.lg }]}>
-        <ThemeToggle />
-      </View>
-
-      <View style={[
-        styles.content,
-        {
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: spacing.lg,
-        }
-      ]}>
-        {/* Logo Section - Centered */}
-        <View style={[styles.logoSection, { marginBottom: spacing.xxl }]}>
-          <View style={[
-            styles.logoBox, 
-            { 
-              backgroundColor: theme.colors.primaryContainer,
-              borderColor: theme.colors.primary + '40',
-              shadowColor: theme.colors.primary,
-              borderRadius: borderRadius.xl,
-              width: scale(100),
-              height: scale(100),
-              borderWidth: 3,
-            }
-          ]}>
-            <Icon
-              name="restaurant"
-              library="ionicons"
-              size={scale(48)}
-              color={theme.colors.primary}
-            />
+    <Animated.View style={[styles.container, { backgroundColor }]}>
+      {/* Header: minimal branding to keep UI clean */}
+      <View style={[styles.header, { paddingTop: spacing.lg, paddingHorizontal: spacing.md }]}>
+        <View style={styles.headerContent}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              style={[
+                styles.logoBox,
+                {
+                  backgroundColor: headerIsLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.06)',
+                  borderRadius: 999,
+                  width: 44,
+                  height: 44,
+                  marginRight: spacing.sm,
+                  borderWidth: 0,
+                },
+              ]}
+            >
+              <Icon
+                name="restaurant"
+                library="ionicons"
+                size={20}
+                color="#1A1A1A"
+              />
+            </View>
+            <Text
+              style={[
+                typography.h3,
+                {
+                  color: headerIsLight ? '#1A1A1A' : (theme.colors.onSurface || 'rgba(255,255,255,0.95)'),
+                  fontWeight: '700',
+                },
+              ]}
+            >
+              ClickSiLog
+            </Text>
           </View>
-          <Text style={[
-            styles.appName, 
-            { 
-              color: theme.colors.text,
-              marginTop: spacing.lg,
-              ...typography.h1,
-            }
-          ]}>
-            ClickSiLog
-          </Text>
-          <Text style={[
-            styles.subtitle, 
-            { 
-              color: theme.colors.textSecondary,
-              marginTop: spacing.sm,
-              ...typography.caption,
-            }
-          ]}>
-            Select your station
-          </Text>
-        </View>
-
-        {/* Station Buttons - Centered */}
-        <View style={[
-          styles.grid, 
-          { 
-            maxWidth: isTablet ? widthPercentage(60) : 350,
-            width: '100%',
-            gap: spacing.md,
-            alignItems: 'center',
-          }
-        ]}>
-          <RoleButton 
-            label="Customer" 
-            iconName="person" 
-            onPress={() => choose('customer')} 
-            theme={theme}
-            borderRadius={borderRadius}
-            spacing={spacing}
-            typography={typography}
-          />
-          <RoleButton 
-            label="Kitchen" 
-            iconName="restaurant" 
-            onPress={() => choose('kitchen')} 
-            theme={theme}
-            borderRadius={borderRadius}
-            spacing={spacing}
-            typography={typography}
-          />
-          <RoleButton 
-            label="Cashier" 
-            iconName="card" 
-            onPress={() => choose('cashier')} 
-            theme={theme}
-            borderRadius={borderRadius}
-            spacing={spacing}
-            typography={typography}
-          />
-          <RoleButton 
-            label="Admin" 
-            iconName="settings" 
-            onPress={() => choose('admin')} 
-            theme={theme}
-            borderRadius={borderRadius}
-            spacing={spacing}
-            typography={typography}
-          />
         </View>
       </View>
-    </View>
+
+      {/* Swipeable role selector */}
+  <RoleSwiper roles={roles} onSelect={choose} scrollX={scrollX} onIndexChange={setActiveIndex} />
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
   },
-  headerRight: {
-    position: 'absolute',
-    zIndex: 10
+  header: {
+    zIndex: 10,
   },
-  logoSection: {
+  headerContent: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
-  logoBox: { 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.08, 
-    shadowRadius: 6, 
-    elevation: 3 
-  },
-  appName: {
-    // Typography handled via theme
-  },
-  subtitle: {
-    // Typography handled via theme
-  },
-  content: {
-    // Centered via inline styles
-  },
-  grid: { 
-    flexDirection: 'column',
-  },
-  roleBtn: { 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.08, 
-    shadowRadius: 8, 
-    elevation: 3,
-  },
-  roleContent: {
+  logoBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
   },
-  iconContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  roleLabel: { 
-    textAlign: 'center',
-  }
 });
 
 export default HomeScreen;

@@ -1,5 +1,10 @@
 import { appConfig } from './appConfig';
 
+// Production-safe logging
+const log = (...args) => { if (__DEV__) console.log(...args); };
+const logError = (...args) => { console.error(...args); }; // Always log errors
+const logWarn = (...args) => { if (__DEV__) console.warn(...args); };
+
 // Export nulls in mock mode - Firebase won't be initialized at all
 export let db = null;
 export let storage = null;
@@ -35,14 +40,14 @@ if (!appConfig.USE_MOCKS) {
     try {
       db = getFirestore(app);
       if (db) {
-        console.log('✅ Firestore initialized successfully');
-        console.log('📊 Firestore is ready to use');
+        log('✅ Firestore initialized successfully');
+        log('📊 Firestore is ready to use');
       } else {
-        console.error('❌ Firestore initialization returned null');
+        logError('❌ Firestore initialization returned null');
       }
     } catch (dbError) {
-      console.error('❌ Firestore initialization failed:', dbError.message);
-      console.error('Error details:', dbError.code, dbError.stack);
+      logError('❌ Firestore initialization failed:', dbError.message);
+      logError('Error details:', dbError.code, dbError.stack);
       db = null;
     }
     
@@ -50,30 +55,30 @@ if (!appConfig.USE_MOCKS) {
     try {
       storage = getStorage(app);
       if (storage) {
-        console.log('✅ Firebase Storage initialized successfully');
+        log('✅ Firebase Storage initialized successfully');
       }
     } catch (storageError) {
-      console.warn('⚠️ Firebase Storage initialization failed:', storageError.message);
+      logWarn('⚠️ Firebase Storage initialization failed:', storageError.message);
       storage = null;
     }
 
     // Final status check
     if (!db) {
-      console.error('❌ CRITICAL: Firestore is not available!');
-      console.error('This means your app will use mock data instead of Firestore.');
-      console.error('Check:');
-      console.error('  1. Is Firestore enabled in Firebase Console?');
-      console.error('  2. Are your Firebase credentials correct?');
-      console.error('  3. Is EXPO_PUBLIC_USE_MOCKS=false in your .env file?');
-      console.error('  4. Do you have internet connection?');
+      logError('❌ CRITICAL: Firestore is not available!');
+      logError('This means your app will use mock data instead of Firestore.');
+      logError('Check:');
+      logError('  1. Is Firestore enabled in Firebase Console?');
+      logError('  2. Are your Firebase credentials correct?');
+      logError('  3. Is EXPO_PUBLIC_USE_MOCKS=false in your .env file?');
+      logError('  4. Do you have internet connection?');
     } else {
-      console.log('✅ Firebase setup complete - Firestore is ready!');
+      log('✅ Firebase setup complete - Firestore is ready!');
     }
   } catch (error) {
     const errorMessage = error.message || String(error);
-    console.error('❌ Firebase initialization failed:', errorMessage);
-      console.error('Error details:', errorMessage, error.code);
-      console.error('This might prevent Firestore from working.');
+    logError('❌ Firebase initialization failed:', errorMessage);
+    logError('Error details:', errorMessage, error.code);
+    logError('This might prevent Firestore from working.');
     
     // Keep exports as null - app will use mock data if Firestore failed
     // Don't throw - let the app continue with fallback

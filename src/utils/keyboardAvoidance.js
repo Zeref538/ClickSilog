@@ -1,11 +1,6 @@
 import React from 'react';
-import { Platform, Keyboard, LayoutAnimation, UIManager } from 'react-native';
+import { Platform, Keyboard, LayoutAnimation } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 /**
  * Throttle function to limit how often a function can be called

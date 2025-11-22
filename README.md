@@ -1,4 +1,4 @@
-# ClickSiLogApp
+# Click Silog
 
 A comprehensive React Native (Expo) restaurant management system with Customer, Kitchen, Cashier, and Admin modules.
 
@@ -28,21 +28,18 @@ npm run build:android:apk
 
 ## Documentation
 
-- **[PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md)** - Complete project documentation including:
-  - Project overview and architecture
-  - Module breakdown (Customer, Kitchen, Cashier, Admin)
-  - **PayMongo Payment Integration** - Detailed setup and implementation guide
-  - Setup & configuration instructions
-  - Build & deployment guide
-- **[ENV_SETUP.md](./ENV_SETUP.md)** - Environment variables setup
-- **[docs/INTEGRATION.md](./docs/INTEGRATION.md)** - Integration guide
+- **Project Summary & Requirements:** `docs/PROJECT_SUMMARY.md` - Complete project documentation, requirements, and change logs
+- **User Manual:** `docs/USER_MANUAL.md` - Step-by-step guide for all user roles
+- **Testing Guide:** `docs/TESTING_GUIDE.md` - Comprehensive real device testing guide
+- **Quick Testing:** `docs/QUICK_TESTING_GUIDE.md` - Fast 5-minute testing checklist
 
 ## Scripts
 
 - `npm start` - Start Expo dev server (Expo Go)
 - `npm run android` - Build and install on Android (local build)
-- `npm run build:android:apk` - Build APK for production (EAS)
+- `npm run build:android:apk` - Build preview APK (EAS)
 - `npm run build:android:dev` - Build development client (EAS)
+- `npm run build:android:prod` - Build production APK (EAS)
 
 ## Project Structure
 
@@ -70,7 +67,7 @@ src/
 
 ## Payment Integration
 
-The app uses **PayMongo** for secure payment processing. See [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md#paymongo-payment-integration) for detailed documentation on:
+The app uses **PayMongo** for secure payment processing. See [PROJECT_SUMMARY.md](./docs/project/PROJECT_SUMMARY.md#paymongo-payment-integration) for detailed documentation on:
 - How PayMongo works
 - Implementation details
 - Setup instructions

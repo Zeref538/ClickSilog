@@ -84,6 +84,34 @@ export const orderService = {
     const discountAmount = Number(order.discountAmount || 0);
     const total = Math.max(0, subtotal - discountAmount);
     
+    // Determine orderType with smart logic
+    let orderType = order.orderType;
+    if (!orderType) {
+      // Priority 1: Check for tableNumber (dine-in)
+      if (order.tableNumber) {
+        orderType = 'dine-in';
+      }
+      // Priority 2: Check for ticketNumber (take-out)
+      else if (order.ticketNumber) {
+        orderType = 'take-out';
+      }
+      // Priority 3: Check source and customerName
+      else if (order.source === 'cashier' && order.customerName) {
+        // Cashier with customer name (not table number) = take-out
+        const isNumeric = /^\d+$/.test(order.customerName);
+        orderType = isNumeric ? 'dine-in' : 'take-out';
+      }
+      // Priority 4: Default based on source
+      else {
+        orderType = order.source === 'cashier' ? 'dine-in' : 'dine-in'; // Default to dine-in
+      }
+    }
+    
+    // Ensure orderType is valid
+    if (orderType !== 'dine-in' && orderType !== 'take-out') {
+      orderType = 'dine-in'; // Fallback to dine-in
+    }
+
     const orderData = {
       ...order,
       items: orderItems,
@@ -93,8 +121,11 @@ export const orderService = {
       discountAmount: discountAmount,
       discountName: order.discountName || null,
       tableNumber: order.tableNumber || null,
+      ticketNumber: order.ticketNumber || null,
       customerName: order.customerName || null,
       userId: order.userId || null,
+      orderType: orderType, // Always set to 'dine-in' or 'take-out'
+      orderNotes: order.orderNotes || null, // Order-level notes
       source: order.source || 'customer', // Track order source (cashier or customer)
       status: 'pending',
       timestamp: new Date().toISOString(),

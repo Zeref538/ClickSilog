@@ -40,14 +40,17 @@ const LoginScreen = () => {
   const expectedRole = route.params?.role || selectedRole;
 
   const handleLogin = async () => {
+    console.log('Login button pressed');
     if (!username.trim() || !password.trim()) {
       alertService.error('Error', 'Please enter both username and password');
       return;
     }
 
+    console.log('Attempting login with username:', username.trim());
     setLoading(true);
     try {
       const user = await authService.loginWithUsername(username.trim(), password);
+      console.log('Login successful, user:', user);
       
       // Validate role - if expected role is set, user's role must match
       // Exception: admin and developer can access any module
@@ -55,13 +58,19 @@ const LoginScreen = () => {
         throw new Error(`This account is for ${user.role} role. Please select ${user.role} from the home screen.`);
       }
       
+      console.log('Calling login function from AuthContext');
       await login(user);
+      console.log('Login function completed, navigation should happen automatically');
       
-      // Navigation will be handled by AppNavigator based on role
-      // AppNavigator will automatically show the correct screen when userRole changes
-      // No need to manually navigate - just let AppNavigator re-render
+      // Don't set loading to false on success - keep it true during navigation
+      // This prevents user from clicking login again while navigation is happening
+      // The AppNavigator will handle navigation, and the next screen will manage its own state
+      // Only set loading to false on error
     } catch (error) {
       console.error('Login error:', error);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+      setLoading(false); // Only reset loading on error
       if (error.message === 'ACCOUNT_DEACTIVATED') {
         alertService.warning(
           'Account Deactivated',
@@ -70,9 +79,12 @@ const LoginScreen = () => {
       } else {
         alertService.error('Login Failed', error.message || 'Invalid credentials');
       }
-    } finally {
-      setLoading(false);
     }
+    // Note: No finally block - we want loading to stay true on success
+    // Safety timeout: if navigation doesn't happen within 3 seconds, reset loading
+    setTimeout(() => {
+      setLoading(false);
+    }, 3000);
   };
 
   return (

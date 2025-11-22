@@ -64,7 +64,7 @@ const CartScreen = ({ navigation, route }) => {
       </View>
       <FlatList
         data={items}
-        keyExtractor={(i) => i.id}
+        keyExtractor={(i, index) => i?.id ? String(i.id) : `${(i?.name || 'item')}-${index}`}
         removeClippedSubviews={true}
         maxToRenderPerBatch={10}
         updateCellsBatchingPeriod={50}

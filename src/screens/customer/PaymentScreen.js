@@ -1,5 +1,5 @@
-import React, { useState, useContext } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useContext, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCart } from '../../contexts/CartContext';
@@ -55,6 +55,33 @@ const PaymentScreen = ({ navigation }) => {
   const [discountInput, setDiscountInput] = useState('');
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [showCashConfirmation, setShowCashConfirmation] = useState(false);
+  const [orderNotes, setOrderNotes] = useState(''); // Order notes field
+  const [customerName, setCustomerName] = useState(user?.customerName || ''); // Customer name for take-out orders, pre-filled from login
+  const scrollViewRef = useRef(null);
+  
+  // Handle keyboard dismiss to reset scroll position
+  useEffect(() => {
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      // Reset scroll position when keyboard is dismissed
+      if (scrollViewRef.current) {
+        // KeyboardAwareScrollView uses scrollToPosition method
+        try {
+          scrollViewRef.current.scrollToPosition(0, 0, true);
+        } catch (e) {
+          // Fallback if method doesn't exist
+          try {
+            scrollViewRef.current.scrollTo({ x: 0, y: 0, animated: true });
+          } catch (err) {
+            // Ignore if scroll view is not available
+          }
+        }
+      }
+    });
+
+    return () => {
+      keyboardDidHideListener.remove();
+    };
+  }, []);
 
   const handleApplyDiscount = async () => {
     if (!discountInput.trim()) {
@@ -94,6 +121,13 @@ const PaymentScreen = ({ navigation }) => {
       setLoading(true);
       
       // Step 1: Create order first to get orderId with pending_payment status
+      // Determine orderType: if user is in take-out mode OR customer name is provided, it's take-out
+      const isTakeOut = user?.orderMode === 'take-out' || (customerName.trim().length > 0);
+      const orderType = isTakeOut ? 'take-out' : 'dine-in';
+      
+      // Use customerName from input, or from user object (set during login), or fallback
+      const finalCustomerName = customerName.trim() || user?.customerName || null;
+      
       const orderData = {
         items,
         subtotal,
@@ -103,8 +137,11 @@ const PaymentScreen = ({ navigation }) => {
         discountCode: discountCode || null,
         discountAmount: discountAmount || 0,
         discountName: discount?.name || null,
-        tableNumber: user?.tableNumber || null,
+        tableNumber: orderType === 'dine-in' ? (user?.tableNumber || null) : null,
+        customerName: orderType === 'take-out' ? finalCustomerName : null,
         userId: user?.uid || null,
+        orderType: orderType,
+        orderNotes: orderNotes.trim() || null, // Order notes
         source: 'customer', // Mark order as created by customer
         paymentStatus: 'pending', // Payment is pending
       };
@@ -162,6 +199,13 @@ const PaymentScreen = ({ navigation }) => {
   const processCashPayment = async () => {
     try {
       setLoading(true);
+      // Determine orderType: if user is in take-out mode OR customer name is provided, it's take-out
+      const isTakeOut = user?.orderMode === 'take-out' || (customerName.trim().length > 0);
+      const orderType = isTakeOut ? 'take-out' : 'dine-in';
+      
+      // Use customerName from input, or from user object (set during login), or fallback
+      const finalCustomerName = customerName.trim() || user?.customerName || null;
+      
       const orderData = {
         items,
         subtotal,
@@ -170,17 +214,40 @@ const PaymentScreen = ({ navigation }) => {
         status: 'pending',
         discountCode: discountCode || null,
         discountAmount: discountAmount || 0,
-        discountName: discount?.name || null
+        discountName: discount?.name || null,
+        orderType: orderType,
+        orderNotes: orderNotes.trim() || null // Order notes
       };
-      await orderService.placeOrder({
+      const orderResult = await orderService.placeOrder({
         ...orderData,
-        tableNumber: user?.tableNumber || null,
+        tableNumber: orderType === 'dine-in' ? (user?.tableNumber || null) : null,
+        customerName: orderType === 'take-out' ? finalCustomerName : null,
         userId: user?.uid || null,
         source: 'customer', // Mark order as created by customer
       });
+      const orderId = orderResult?.id || orderResult?.orderId;
       clearCart();
-      // Navigation handled by CustomerOrderNotification component
-      navigation.popToTop();
+      
+      // Fetch order data and navigate to receipt
+      if (orderId) {
+        try {
+          const { firestoreService } = await import('../../services/firestoreService');
+          const order = await firestoreService.getDocument('orders', orderId);
+          if (order) {
+            navigation.navigate('Receipt', { order });
+          } else {
+            // Fallback: navigate to receipt with basic order data
+            navigation.navigate('Receipt', { order: { id: orderId, ...orderData } });
+          }
+        } catch (error) {
+          console.error('Error fetching order for receipt:', error);
+          // Fallback: navigate to receipt with basic order data
+          navigation.navigate('Receipt', { order: { id: orderId, ...orderData } });
+        }
+      } else {
+        // Fallback navigation if no order ID
+        navigation.popToTop();
+      }
     } catch (e) {
       console.error('Payment error:', e.message);
       // Error will be shown by CustomerOrderNotification or handled gracefully
@@ -326,12 +393,18 @@ const PaymentScreen = ({ navigation }) => {
       </View>
 
       <KeyboardAwareScrollView
+        innerRef={(ref) => { scrollViewRef.current = ref; }}
         enableOnAndroid={true}
         extraScrollHeight={80}
         keyboardShouldPersistTaps="handled"
+        enableResetScrollToCoords={true}
+        resetScrollToCoords={{ x: 0, y: 0 }}
         style={[styles.scrollView, { backgroundColor: theme.colors.background }]}
         contentContainerStyle={[styles.contentContainer, { padding: spacing.xl, paddingBottom: spacing.xl }]}
         showsVerticalScrollIndicator={false}
+        enableAutomaticScroll={true}
+        extraHeight={20}
+        keyboardDismissMode="on-drag"
       >
       <View style={[
         styles.content, 
@@ -391,6 +464,89 @@ const PaymentScreen = ({ navigation }) => {
             borderRadius={borderRadius}
             spacing={spacing}
             typography={typography}
+          />
+        </View>
+
+        {/* Customer Information Section */}
+        <View style={[
+          styles.customerInfoSection,
+          {
+            backgroundColor: theme.colors.surfaceVariant,
+            borderRadius: borderRadius.lg,
+            padding: spacing.md,
+            marginBottom: spacing.md,
+            borderWidth: 1.5,
+            borderColor: theme.colors.border,
+          }
+        ]}>
+          <View style={styles.customerInfoHeader}>
+            <Icon
+              name="information-circle"
+              library="ionicons"
+              size={20}
+              color={theme.colors.textSecondary}
+              style={{ marginRight: spacing.sm }}
+            />
+            <Text style={[
+              styles.customerInfoLabel,
+              {
+                color: theme.colors.text,
+                ...typography.bodyBold,
+              }
+            ]}>
+              Customer Information
+            </Text>
+          </View>
+          
+          {/* Customer Name for Take-Out Orders - Pre-fill if available from login */}
+          {user?.orderMode === 'take-out' && (
+            <TextInput
+              value={customerName || user?.customerName || ''}
+              onChangeText={setCustomerName}
+              placeholder="Enter Customer Name"
+              placeholderTextColor={theme.colors.textTertiary}
+              onBlur={() => {
+                Keyboard.dismiss();
+              }}
+              style={[
+                styles.customerInfoInput,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.border,
+                  color: theme.colors.text,
+                  borderRadius: borderRadius.md,
+                  padding: spacing.md,
+                  borderWidth: 1.5,
+                  marginTop: spacing.sm,
+                  ...typography.body,
+                }
+              ]}
+            />
+          )}
+          {/* Order Notes (Optional) */}
+          <TextInput
+            value={orderNotes}
+            onChangeText={setOrderNotes}
+            placeholder="Order Notes (Optional)"
+            placeholderTextColor={theme.colors.textTertiary}
+            onBlur={() => {
+              Keyboard.dismiss();
+            }}
+            style={[
+              styles.customerInfoInput,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: theme.colors.border,
+                color: theme.colors.text,
+                borderRadius: borderRadius.md,
+                padding: spacing.md,
+                borderWidth: 1.5,
+                marginTop: spacing.sm,
+                ...typography.body,
+              }
+            ]}
+            multiline
+            numberOfLines={2}
           />
         </View>
 
@@ -774,6 +930,22 @@ const styles = StyleSheet.create({
     fontSize: 13, 
     opacity: 0.95, 
     fontWeight: '600' 
+  },
+  customerInfoSection: {
+    // Styled inline
+  },
+  customerInfoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  customerInfoLabel: {
+    // Typography handled via theme
+  },
+  customerInfoInput: {
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
+    elevation: 1,
   },
   discountSection: {
     shadowOffset: { width: 0, height: 1 },

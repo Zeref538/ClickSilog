@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useRef, useState, useCallback } from 'react';
-import { Animated, Easing, Platform, Keyboard, Dimensions } from 'react-native';
+import { Animated, Easing, Platform, Keyboard, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const KeyboardFocusContext = createContext(null);
@@ -17,7 +17,7 @@ export const KeyboardFocusProvider = ({ children }) => {
   const isAnimating = useRef(false);
   const debounceTimeout = useRef(null);
 
-  const { height: screenHeight } = Dimensions.get('window');
+  const { height: screenHeight } = useWindowDimensions();
 
   // Register a scroll container for a screen
   const registerScrollRef = useCallback((screenName, scrollRef) => {

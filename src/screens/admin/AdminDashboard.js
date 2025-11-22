@@ -304,10 +304,10 @@ const AdminDashboard = () => {
         />
 
         <MenuCard
-          icon="cloud-upload"
+          icon="layers"
           iconColor={theme.colors.info}
-          title="Seed Database"
-          subtitle="Populate Firestore with initial data"
+          title="Data Samples"
+          subtitle="Generate or delete sample data"
           onPress={() => navigation.navigate('SeedDatabase')}
         />
 
@@ -317,6 +317,14 @@ const AdminDashboard = () => {
           title="Payment Settings"
           subtitle="Configure payment confirmation password"
           onPress={() => navigation.navigate('PaymentSettings')}
+        />
+
+        <MenuCard
+          icon="key"
+          iconColor={theme.colors.info}
+          title="PIN Lock Settings"
+          subtitle="Configure app security lock and auto-lock timeout"
+          onPress={() => navigation.navigate('PinLockSettings')}
         />
       </ScrollView>
 

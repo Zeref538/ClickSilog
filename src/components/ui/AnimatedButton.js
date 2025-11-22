@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { TouchableOpacity, StyleSheet, View } from 'react-native';
 import Animated, { 
   useSharedValue, 
@@ -6,6 +6,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { PinLockContext } from '../../contexts/PinLockContext';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -21,6 +22,10 @@ const AnimatedButton = ({
   activeOpacity = 0.8,
   ...props 
 }) => {
+  // Safely get PinLock context - don't throw error if not available
+  const pinLockContext = useContext(PinLockContext);
+  const registerActivity = pinLockContext?.registerActivity || (() => {});
+  
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
 
@@ -32,6 +37,9 @@ const AnimatedButton = ({
   });
 
   const handlePressIn = () => {
+    // Register activity on button press
+    registerActivity();
+    
     scale.value = withSpring(0.96, { 
       damping: 20, 
       stiffness: 400,
@@ -50,6 +58,8 @@ const AnimatedButton = ({
   };
   
   const handlePress = (event) => {
+    // Register activity on button press
+    registerActivity();
     // Call onPress immediately without delay
     if (onPress && !disabled) {
       onPress(event);

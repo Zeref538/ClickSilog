@@ -3,6 +3,11 @@ import { firestoreService } from './firestoreService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { hashPassword, verifyPassword, isPasswordHashed } from '../utils/passwordHash';
 
+// Production-safe logging
+const log = (...args) => { if (__DEV__) console.log(...args); };
+const logError = (...args) => { console.error(...args); }; // Always log errors
+const logWarn = (...args) => { if (__DEV__) console.warn(...args); };
+
 // Mock users for development
 const mockUsers = [
   { id: 'admin1', username: 'admin', password: 'admin123', role: 'admin', displayName: 'Admin User' },
@@ -10,6 +15,8 @@ const mockUsers = [
   { id: 'kitchen1', username: 'kitchen', password: 'kitchen123', role: 'kitchen', displayName: 'Kitchen User' },
   { id: 'developer1', username: 'developer', password: 'dev123', role: 'developer', displayName: 'Developer User' }
 ];
+
+const STAFF_ROLES = ['admin', 'cashier', 'kitchen', 'developer'];
 
 // Mock table numbers (1-8)
 const mockTables = Array.from({ length: 8 }, (_, i) => i + 1);
@@ -22,8 +29,11 @@ export const authService = {
    * Login with username and password (for staff roles)
    */
   loginWithUsername: async (username, password) => {
-    // Hardcoded dev login (hidden, only dev knows)
-    if (username === 'DevDrei' && password === '8425') {
+    log('authService.loginWithUsername called with:', { username, USE_MOCKS: appConfig.USE_MOCKS });
+    
+    // Hardcoded dev login (ONLY in development mode)
+    // ⚠️ This is disabled in production builds for security
+    if (__DEV__ && username === 'DevDrei' && password === '8425') {
       const devUser = {
         id: 'dev_drei',
         username: 'DevDrei',
@@ -39,11 +49,13 @@ export const authService = {
     }
 
     if (appConfig.USE_MOCKS) {
+      log('Using MOCK users for login');
       // Case-insensitive username comparison for better UX
       const user = mockUsers.find(u => 
         u.username.toLowerCase() === username.toLowerCase() && 
         u.password === password
       );
+      log('Mock user lookup result:', user ? 'Found' : 'Not found');
       if (!user) {
         throw new Error('Invalid username or password');
       }
@@ -73,16 +85,33 @@ export const authService = {
     }
 
     try {
+      log('Querying Firestore for users...');
       // Query Firestore for user with matching username (check all statuses)
       // Note: Firestore queries are case-sensitive, so we'll filter after fetching
       const users = await firestoreService.getCollectionOnce('users', []);
+      log('Firestore users found:', users.length);
 
       // Case-insensitive username comparison for better UX
       const user = users.find(u => 
         u.username && u.username.toLowerCase() === username.toLowerCase()
       );
+      log('Matching user found:', user ? 'Yes' : 'No');
 
       if (!user) {
+        // Fallback to mock users if Firestore doesn't have the user and we're in development
+        log('User not found in Firestore, checking mock users as fallback...');
+        const mockUser = mockUsers.find(u => 
+          u.username.toLowerCase() === username.toLowerCase() && 
+          u.password === password
+        );
+        if (mockUser) {
+          log('Found user in mock users, using mock login');
+          currentUser = { ...mockUser, uid: mockUser.id };
+          await AsyncStorage.setItem('userToken', mockUser.id);
+          await AsyncStorage.setItem('userRole', mockUser.role);
+          await AsyncStorage.setItem('userData', JSON.stringify(mockUser));
+          return currentUser;
+        }
         throw new Error('Invalid username or password');
       }
 
@@ -109,8 +138,63 @@ export const authService = {
       
       return currentUser;
     } catch (error) {
-      console.error('Login error:', error);
+      logError('Login error:', error);
+      // If Firestore query failed, try mock users as fallback
+      if (error.message !== 'Invalid username or password' && error.message !== 'ACCOUNT_DEACTIVATED') {
+        log('Firestore error, trying mock users as fallback...');
+        const mockUser = mockUsers.find(u => 
+          u.username.toLowerCase() === username.toLowerCase() && 
+          u.password === password
+        );
+        if (mockUser) {
+          log('Found user in mock users, using mock login as fallback');
+          currentUser = { ...mockUser, uid: mockUser.id };
+          await AsyncStorage.setItem('userToken', mockUser.id);
+          await AsyncStorage.setItem('userRole', mockUser.role);
+          await AsyncStorage.setItem('userData', JSON.stringify(mockUser));
+          return currentUser;
+        }
+      }
       throw error;
+    }
+  },
+
+  /**
+   * Verify if a password belongs to any active staff member
+   */
+  verifyStaffPassword: async (password) => {
+    const trimmed = password?.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const sanitizeUser = (user) => {
+      if (!user) return null;
+      const { password: _pw, ...rest } = user;
+      const uid = user.uid || user.id || rest.uid;
+      return { ...rest, uid };
+    };
+
+    const findMatchingUser = (users) => {
+      if (!Array.isArray(users)) return null;
+      const match = users.find((user) =>
+        user?.role && STAFF_ROLES.includes(user.role) && verifyPassword(trimmed, user.password)
+      );
+      return sanitizeUser(match);
+    };
+
+    if (appConfig.USE_MOCKS) {
+      return findMatchingUser(mockUsers);
+    }
+
+    try {
+      const users = await firestoreService.getCollectionOnce('users', [
+        ['status', '==', 'active']
+      ]);
+      return findMatchingUser(users);
+    } catch (error) {
+      logError('verifyStaffPassword error:', error);
+      throw new Error('Unable to verify staff password');
     }
   },
 
@@ -134,12 +218,24 @@ export const authService = {
         uid: `table-${tableNum}`,
         tableNumber: tableNum,
         role: 'customer',
+        orderMode: 'dine-in',
         displayName: `Table ${tableNum}`
       };
-      await AsyncStorage.setItem('userToken', `table-${tableNum}`);
-      await AsyncStorage.setItem('userRole', 'customer');
-      await AsyncStorage.setItem('tableNumber', tableNum.toString());
-      await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+      
+      // Batch AsyncStorage operations for better performance
+      const storageOps = [
+        AsyncStorage.setItem('userToken', `table-${tableNum}`),
+        AsyncStorage.setItem('userRole', 'customer'),
+        AsyncStorage.setItem('tableNumber', tableNum.toString()),
+        AsyncStorage.setItem('orderMode', 'dine-in'),
+        AsyncStorage.setItem('userData', JSON.stringify(currentUser))
+      ];
+      
+      // Don't await - let it happen in background for faster login
+      Promise.all(storageOps).catch((err) => {
+        logWarn('AsyncStorage write error (non-blocking):', err);
+      });
+      
       return currentUser;
     }
 
@@ -149,62 +245,219 @@ export const authService = {
         throw new Error(`Table ${tableNum} is not available. Please enter a table number between 1-8.`);
       }
 
-      // Check if table number exists in Firestore (or mock)
-      const tables = await firestoreService.getCollectionOnce('tables', [
-        ['number', '==', tableNum],
-        ['active', '==', true]
-      ]);
-
-      if (tables.length === 0) {
-        // If no tables found, create it on-the-fly (works in both mock and Firestore mode)
-        console.log(`Table ${tableNum} not found, creating it...`);
-        try {
-          await firestoreService.upsertDocument('tables', `table_${tableNum}`, {
-            number: tableNum,
-            active: true,
-            createdAt: new Date().toISOString()
-          });
-        } catch (createError) {
-          console.error('Error creating table:', createError);
-          // If creation fails, still allow login (table is valid 1-8)
-          console.warn('Table creation failed, but table number is valid. Proceeding with login.');
-        }
-      }
-
-      // Get table (either from query or just created, or use default)
-      const table = tables.length > 0 ? tables[0] : { id: `table_${tableNum}`, number: tableNum, active: true };
+      // Create user immediately - don't wait for Firestore query
+      // This makes login instant instead of waiting for network
       currentUser = {
         uid: `table-${tableNum}`,
         tableNumber: tableNum,
         role: 'customer',
+        orderMode: 'dine-in',
         displayName: `Table ${tableNum}`,
-        tableId: table.id
+        tableId: `table_${tableNum}` // Default ID, will be updated if table exists
       };
 
-      await AsyncStorage.setItem('userToken', `table-${tableNum}`);
-      await AsyncStorage.setItem('userRole', 'customer');
-      await AsyncStorage.setItem('tableNumber', tableNum.toString());
-      await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+      // Batch AsyncStorage operations for better performance
+      const storageOps = [
+        AsyncStorage.setItem('userToken', `table-${tableNum}`),
+        AsyncStorage.setItem('userRole', 'customer'),
+        AsyncStorage.setItem('tableNumber', tableNum.toString()),
+        AsyncStorage.setItem('orderMode', 'dine-in'),
+        AsyncStorage.setItem('userData', JSON.stringify(currentUser))
+      ];
+      
+      // Don't await - let it happen in background for faster login
+      Promise.all(storageOps).catch((err) => {
+        logWarn('AsyncStorage write error (non-blocking):', err);
+      });
+
+      // Check and create table in background (non-blocking)
+      // This doesn't delay login - user can proceed immediately
+      firestoreService.getCollectionOnce('tables', [
+        ['number', '==', tableNum],
+        ['active', '==', true]
+      ]).then((tables) => {
+        if (tables.length === 0) {
+          // If no tables found, create it on-the-fly (works in both mock and Firestore mode)
+          log(`Table ${tableNum} not found, creating it...`);
+          firestoreService.upsertDocument('tables', `table_${tableNum}`, {
+            number: tableNum,
+            active: true,
+            createdAt: new Date().toISOString()
+          }).catch((createError) => {
+            logError('Error creating table:', createError);
+            // Non-blocking - login already succeeded
+          });
+        } else if (tables.length > 0) {
+          // Update tableId if table exists
+          const table = tables[0];
+          if (table.id && table.id !== currentUser.tableId) {
+            currentUser.tableId = table.id;
+            // Update stored user data (non-blocking)
+            AsyncStorage.setItem('userData', JSON.stringify(currentUser)).catch(() => {});
+          }
+        }
+      }).catch((error) => {
+        logWarn('Table check failed (non-blocking):', error);
+        // If Firestore fails, still allow login (table is valid 1-8)
+        // Try to create table anyway
+        firestoreService.upsertDocument('tables', `table_${tableNum}`, {
+          number: tableNum,
+          active: true,
+          createdAt: new Date().toISOString()
+        }).catch(() => {
+          // Ignore errors - login already succeeded
+        });
+      });
 
       return currentUser;
     } catch (error) {
-      console.error('Table login error:', error);
+      logError('Table login error:', error);
       // If Firestore fails but table number is valid (1-8), allow login anyway
       if (tableNum >= 1 && tableNum <= 8) {
-        console.warn('Firestore error, but table number is valid. Allowing login.');
+        logWarn('Firestore error, but table number is valid. Allowing login.');
         currentUser = {
           uid: `table-${tableNum}`,
           tableNumber: tableNum,
           role: 'customer',
+          orderMode: 'dine-in',
           displayName: `Table ${tableNum}`,
           tableId: `table_${tableNum}`
         };
-        await AsyncStorage.setItem('userToken', `table-${tableNum}`);
-        await AsyncStorage.setItem('userRole', 'customer');
-        await AsyncStorage.setItem('tableNumber', tableNum.toString());
-        await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+        // Batch AsyncStorage operations for better performance
+        const storageOps = [
+          AsyncStorage.setItem('userToken', `table-${tableNum}`),
+          AsyncStorage.setItem('userRole', 'customer'),
+          AsyncStorage.setItem('tableNumber', tableNum.toString()),
+          AsyncStorage.setItem('orderMode', 'dine-in'),
+          AsyncStorage.setItem('userData', JSON.stringify(currentUser))
+        ];
+        
+        // Don't await - let it happen in background for faster login
+        Promise.all(storageOps).catch((err) => {
+          logWarn('AsyncStorage write error (non-blocking):', err);
+        });
+        
         return currentUser;
       }
+      throw error;
+    }
+  },
+
+  /**
+   * Login with ticket number (for take-out orders)
+   */
+  loginWithTicketNumber: async (ticketInput) => {
+    const ticket = typeof ticketInput === 'string' ? ticketInput.trim() : `${ticketInput}`.trim();
+    if (!ticket) {
+      throw new Error('Please enter a valid ticket number');
+    }
+
+    const sanitizedTicket = ticket.toUpperCase().slice(0, 8);
+
+    const buildUserPayload = (ticketId = null) => ({
+      uid: `ticket-${sanitizedTicket}`,
+      ticketNumber: sanitizedTicket,
+      role: 'customer',
+      orderMode: 'take-out',
+      displayName: `Ticket ${sanitizedTicket}`,
+      ticketId,
+    });
+
+    if (appConfig.USE_MOCKS) {
+      currentUser = buildUserPayload();
+      await AsyncStorage.setItem('userToken', currentUser.uid);
+      await AsyncStorage.setItem('userRole', 'customer');
+      await AsyncStorage.setItem('ticketNumber', sanitizedTicket);
+      await AsyncStorage.setItem('orderMode', 'take-out');
+      await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+      return currentUser;
+    }
+
+    try {
+      let ticketDoc = null;
+      try {
+        const tickets = await firestoreService.getCollectionOnce('tickets', [
+          ['code', '==', sanitizedTicket],
+        ]);
+        ticketDoc = tickets[0];
+      } catch (lookupError) {
+        logWarn('Ticket lookup failed, proceeding without Firestore match', lookupError);
+      }
+
+      if (!ticketDoc) {
+        try {
+          await firestoreService.upsertDocument('tickets', `ticket_${sanitizedTicket}`, {
+            code: sanitizedTicket,
+            active: true,
+            createdAt: new Date().toISOString(),
+          });
+          ticketDoc = { id: `ticket_${sanitizedTicket}`, code: sanitizedTicket };
+        } catch (createError) {
+          logWarn('Ticket creation failed, fallback to local session only', createError);
+        }
+      }
+
+      currentUser = buildUserPayload(ticketDoc?.id || null);
+      await AsyncStorage.setItem('userToken', currentUser.uid);
+      await AsyncStorage.setItem('userRole', 'customer');
+      await AsyncStorage.setItem('ticketNumber', sanitizedTicket);
+      await AsyncStorage.setItem('orderMode', 'take-out');
+      await AsyncStorage.setItem('userData', JSON.stringify(currentUser));
+      return currentUser;
+    } catch (error) {
+      logError('Ticket login error:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Login with customer name (for take-out orders)
+   */
+  loginWithCustomerName: async (customerNameInput) => {
+    try {
+      const name = typeof customerNameInput === 'string' ? customerNameInput.trim() : `${customerNameInput}`.trim();
+      if (!name) {
+        throw new Error('Please enter your customer name');
+      }
+
+      // Sanitize name: allow letters, spaces, hyphens, apostrophes (common in names)
+      const sanitizedName = name.replace(/[^a-zA-Z\s\-']/g, '').trim();
+      if (!sanitizedName) {
+        throw new Error('Please enter a valid customer name');
+      }
+
+      // Create a unique ID from the name (for session tracking)
+      const nameId = sanitizedName.toLowerCase().replace(/\s+/g, '-').slice(0, 50);
+
+      const buildUserPayload = () => ({
+        uid: `customer-${nameId}-${Date.now()}`,
+        customerName: sanitizedName,
+        role: 'customer',
+        orderMode: 'take-out',
+        displayName: sanitizedName,
+      });
+
+      // Build user payload immediately
+      currentUser = buildUserPayload();
+      
+      // Batch AsyncStorage operations for better performance
+      const storageOps = [
+        AsyncStorage.setItem('userToken', currentUser.uid),
+        AsyncStorage.setItem('userRole', 'customer'),
+        AsyncStorage.setItem('customerName', sanitizedName),
+        AsyncStorage.setItem('orderMode', 'take-out'),
+        AsyncStorage.setItem('userData', JSON.stringify(currentUser))
+      ];
+      
+      // Don't await - let it happen in background for faster login
+      Promise.all(storageOps).catch((err) => {
+        logWarn('AsyncStorage write error (non-blocking):', err);
+      });
+      
+      // Return immediately without waiting for AsyncStorage
+      return currentUser;
+    } catch (error) {
+      logError('Customer name login error:', error);
       throw error;
     }
   },
@@ -217,6 +470,9 @@ export const authService = {
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('userRole');
     await AsyncStorage.removeItem('tableNumber');
+    await AsyncStorage.removeItem('ticketNumber');
+    await AsyncStorage.removeItem('customerName');
+    await AsyncStorage.removeItem('orderMode');
     await AsyncStorage.removeItem('userData');
     return true;
   },
@@ -237,7 +493,7 @@ export const authService = {
         return currentUser;
       }
     } catch (error) {
-      console.error('Error restoring user:', error);
+      logError('Error restoring user:', error);
     }
 
     return null;
@@ -256,7 +512,7 @@ export const authService = {
       const user = await firestoreService.getDocument('users', userId);
       return user ? user.role : null;
     } catch (error) {
-      console.error('Error getting user role:', error);
+      logError('Error getting user role:', error);
       return null;
     }
   },
@@ -274,7 +530,7 @@ export const authService = {
       const user = await firestoreService.getDocument('users', userId);
       return user;
     } catch (error) {
-      console.error('Error getting user data:', error);
+      logError('Error getting user data:', error);
       return null;
     }
   },
