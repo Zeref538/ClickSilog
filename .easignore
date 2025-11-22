@@ -1,0 +1,28 @@
+# EAS Build ignore file
+# Files and directories to exclude from EAS builds
+
+# Build outputs
+build/
+dist/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+
+# Windows batch files (not needed on Linux build server)
+*.bat
+
+# PowerShell scripts (not needed on Linux build server)
+*.ps1
+

@@ -3,10 +3,12 @@ const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname);
+// Use process.cwd() to avoid Windows path issues in EAS builds
+const config = getDefaultConfig(process.cwd());
 
 // Exclude problematic directories from file watching
-config.watchFolders = [__dirname];
+// Use process.cwd() instead of __dirname to avoid Windows path issues in EAS builds
+config.watchFolders = [process.cwd()];
 
 // Block list for directories Metro should ignore
 config.resolver = {

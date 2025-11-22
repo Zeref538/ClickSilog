@@ -28,6 +28,14 @@
   },
   "submit": {
     "production": {}
+  },
+  "hooks": {
+    "pre-install": {
+      "command": "echo 'Pre-install hook'"
+    },
+    "post-install": {
+      "command": "echo 'Post-install hook'"
+    }
   }
 }
 
