@@ -2,7 +2,9 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
-def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+// Use relative path instead of absolute to avoid Windows path issues in EAS builds
+// Convert to forward slashes for cross-platform compatibility
+def projectRoot = rootDir.getParentFile().toString().replace('\\', '/')
 
 /**
  * This is the configuration block to customize your React Native Android app.
